@@ -10,25 +10,49 @@ import LoadingSpinner from './components/LoadingSpinner';
 function ProtectedRoute({ children, adminOnly = false }) {
   const { currentUser, userProfile } = useAuth();
   
+  console.log('🔒 ProtectedRoute check:', {
+    currentUser: currentUser?.uid || 'none',
+    adminOnly,
+    userProfile: {
+      isAdmin: userProfile?.isAdmin || false,
+      isStudent: userProfile?.isStudent || false
+    }
+  });
+  
   if (!currentUser) {
+    console.log('❌ ProtectedRoute: No currentUser - redirecting to login');
     return <Navigate to="/" replace />;
   }
   
   if (adminOnly && (!userProfile || !userProfile.isAdmin)) {
+    console.log('❌ ProtectedRoute: Admin required but user is not admin - redirecting to login');
     return <Navigate to="/" replace />;
   }
   
+  console.log('✅ ProtectedRoute: Access granted');
   return children;
 }
 
 function AppRoutes() {
   const { currentUser, userProfile } = useAuth();
   
+  // Debug logging
+  console.log('🔍 AppRoutes render:', {
+    currentUser: currentUser?.uid || 'none',
+    userProfile: {
+      isAdmin: userProfile?.isAdmin || false,
+      isStudent: userProfile?.isStudent || false,
+      hasVoted: userProfile?.hasVoted || false
+    }
+  });
+  
   if (!currentUser) {
+    console.log('🚪 No currentUser - showing LoginPage');
     return <LoginPage />;
   }
   
   if (userProfile?.isAdmin) {
+    console.log('👑 Admin user detected - routing to admin dashboard');
     return (
       <Routes>
         <Route path="/admin" element={
@@ -53,6 +77,7 @@ function AppRoutes() {
     );
   }
   
+  console.log('🎓 Student user detected - routing to student dashboard');
   return (
     <Routes>
       <Route path="/student" element={

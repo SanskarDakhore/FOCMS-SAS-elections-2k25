@@ -29,6 +29,7 @@ export function AuthProvider({ children }) {
   const [currentUser, setCurrentUser] = useState(null);
   const [userProfile, setUserProfile] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [profileLoading, setProfileLoading] = useState(false);
   const [deviceId, setDeviceId] = useState(null);
   const [votingSchedule, setVotingSchedule] = useState(null);
 
@@ -288,21 +289,38 @@ export function AuthProvider({ children }) {
   // Admin login
   const loginAdmin = async (email, password) => {
     try {
+      console.log('🔑 Attempting admin login for:', email);
+      setProfileLoading(true);
+      
       const userCredential = await signInWithEmailAndPassword(auth, email, password);
+      
+      console.log('✅ Firebase Auth successful for:', userCredential.user.uid);
       
       // Check if user is admin
       const adminDocRef = doc(db, 'admins', userCredential.user.uid);
       const adminDoc = await getDoc(adminDocRef);
       
       if (!adminDoc.exists()) {
+        console.log('❌ User not found in admins collection');
         await signOut(auth);
+        setProfileLoading(false);
         throw new Error('Access denied. Admin privileges required.');
       }
       
-      setUserProfile({ ...adminDoc.data(), isAdmin: true });
+      console.log('✅ Admin document found, setting profile');
+      const adminProfile = { ...adminDoc.data(), isAdmin: true };
+      
+      // Set both currentUser and userProfile immediately
+      setCurrentUser(userCredential.user);
+      setUserProfile(adminProfile);
+      setProfileLoading(false);
+      
+      console.log('✅ Admin login completed successfully', adminProfile);
       return userCredential;
       
     } catch (error) {
+      console.error('❌ Admin login error:', error);
+      setProfileLoading(false);
       throw error;
     }
   };
@@ -394,27 +412,40 @@ export function AuthProvider({ children }) {
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
+      console.log('🔍 Auth state changed:', { user: user?.uid, currentProfile: userProfile?.isAdmin || userProfile?.isStudent });
+      
       // Only handle Firebase Auth for admin users, don't interfere with student auth
       if (user) {
         // This is a Firebase Auth user (admin)
         setCurrentUser(user);
         
-        if (!userProfile) {
+        // Only fetch admin profile if we don't already have one or if it's a different user
+        if (!userProfile || (!userProfile.isAdmin && !userProfile.isStudent)) {
           try {
             // Check if admin
             const adminDocRef = doc(db, 'admins', user.uid);
             const adminDoc = await getDoc(adminDocRef);
             
             if (adminDoc.exists()) {
+              console.log('✅ Admin profile loaded successfully');
               setUserProfile({ ...adminDoc.data(), isAdmin: true });
+            } else {
+              console.log('❌ User is not an admin');
+              // User exists in Firebase Auth but not in admins collection
+              await signOut(auth);
+              setCurrentUser(null);
+              setUserProfile(null);
             }
           } catch (error) {
             console.error('Error fetching admin profile:', error);
+            setCurrentUser(null);
+            setUserProfile(null);
           }
         }
       } else {
         // No Firebase Auth user - only clear if it's not a student
         if (!userProfile || !userProfile.isStudent) {
+          console.log('🔄 Clearing auth state (no Firebase user)');
           setCurrentUser(null);
           setUserProfile(null);
         }
@@ -424,7 +455,7 @@ export function AuthProvider({ children }) {
     });
 
     return unsubscribe;
-  }, [userProfile]);
+  }, []);
 
   const value = {
     currentUser,

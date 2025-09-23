@@ -7,13 +7,14 @@ import { getStorage } from "firebase/storage";
 // Your web app's Firebase configuration
 // For Firebase JS SDK v9-compat and later, measurementId is optional
 const firebaseConfig = {
-  apiKey: "AIzaSyAV4mfx11xy5cjlszxn4x28SdoA98qo4v8",
-  authDomain: "election-portal-2k25.firebaseapp.com",
-  projectId: "election-portal-2k25",
-  storageBucket: "election-portal-2k25.firebasestorage.app",
-  messagingSenderId: "260620060661",
-  appId: "1:260620060661:web:606627bacccdb26adc82bc"
+  apiKey: "AIzaSyCvlrUyIStJRdw1LUq_FDqYqDdZn9ao1os",
+  authDomain: "focms-sas-elections-2k25.firebaseapp.com",
+  projectId: "focms-sas-elections-2k25",
+  storageBucket: "focms-sas-elections-2k25.firebasestorage.app",
+  messagingSenderId: "388845860276",
+  appId: "1:388845860276:web:c9bb6a7219ae2ecc21aee1"
 };
+
 
 // Initialize Firebase
 const app = initializeApp(firebaseConfig);

@@ -1,5 +1,6 @@
-studentId,name,class,password
-S1001,John Doe,BCA-1,
-S1002,Jane Smith,BCA-2,password123
-,Robert Johnson,MCA-1,
-,Emily Davis,MCA-2,emily123
+studentId,name,program,semester,class,password
+S1001,John Doe,BBA,1,BBA-Sem1,
+S1002,Jane Smith,BBA,3,BBA-Sem3,password123
+S1003,Robert Johnson,BBA,5,BBA-Sem5,
+S2001,Emily Davis,MBA,1,MBA-Sem1,emily123
+S2002,Michael Brown,MBA,1,MBA-Sem1,
