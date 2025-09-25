@@ -29,7 +29,8 @@ import {
   UserCheck,
   Calendar,
   Clock,
-  Vote
+  Vote,
+  Search
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import LoadingSpinner from './LoadingSpinner';
@@ -48,6 +49,7 @@ function AdminDashboard() {
   const [selectedSemester, setSelectedSemester] = useState('');
   const [filterByCourse, setFilterByCourse] = useState('');
   const [filterBySemester, setFilterBySemester] = useState('');
+  const [searchStudentName, setSearchStudentName] = useState('');
   const [showModal, setShowModal] = useState(false);
   const [modalType, setModalType] = useState('');
   const [editItem, setEditItem] = useState(null);
@@ -1515,6 +1517,24 @@ Please share this with the student securely.`);
         {/* Filtering Controls */}
         <div className="mb-6 p-4 bg-gray-50 rounded-lg">
           <h4 className="text-md font-semibold text-gray-900 mb-4">🔍 Filter & Export Options</h4>
+          
+          {/* Search Bar */}
+          <div className="mb-4">
+            <label className="form-label">Search by Student Name</label>
+            <div className="relative">
+              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                <Search className="h-5 w-5 text-gray-400" />
+              </div>
+              <input
+                type="text"
+                placeholder="Search student by name..."
+                value={searchStudentName}
+                onChange={(e) => setSearchStudentName(e.target.value)}
+                className="form-input pl-10"
+              />
+            </div>
+          </div>
+          
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <div>
               <label className="form-label">Filter by Course</label>
@@ -1546,10 +1566,11 @@ Please share this with the student securely.`);
                 onClick={() => {
                   setFilterByCourse('');
                   setFilterBySemester('');
+                  setSearchStudentName('');
                 }}
                 className="btn-secondary w-full"
               >
-                Clear Filters
+                Clear All Filters
               </button>
             </div>
             <div className="flex items-end">
@@ -1571,14 +1592,20 @@ Please share this with the student securely.`);
         </div>
         
         {/* Filter Summary */}
-        {(filterByCourse || filterBySemester) && (
+        {(filterByCourse || filterBySemester || searchStudentName) && (
           <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
             <p className="text-blue-800 text-sm">
               📊 Showing {students.filter(student => {
                 const courseMatch = !filterByCourse || student.program === filterByCourse;
                 const semesterMatch = !filterBySemester || student.semester?.toString() === filterBySemester;
-                return courseMatch && semesterMatch;
+                const nameMatch = !searchStudentName || student.name.toLowerCase().includes(searchStudentName.toLowerCase());
+                return courseMatch && semesterMatch && nameMatch;
               }).length} of {students.length} students
+              {searchStudentName && (
+                <span className="ml-2 px-2 py-1 bg-purple-200 text-purple-800 rounded text-xs">
+                  Search: {searchStudentName}
+                </span>
+              )}
               {filterByCourse && (
                 <span className="ml-2 px-2 py-1 bg-blue-200 text-blue-800 rounded text-xs">
                   Course: {filterByCourse}
@@ -1612,7 +1639,8 @@ Please share this with the student securely.`);
                 .filter(student => {
                   const courseMatch = !filterByCourse || student.program === filterByCourse;
                   const semesterMatch = !filterBySemester || student.semester?.toString() === filterBySemester;
-                  return courseMatch && semesterMatch;
+                  const nameMatch = !searchStudentName || student.name.toLowerCase().includes(searchStudentName.toLowerCase());
+                  return courseMatch && semesterMatch && nameMatch;
                 })
                 .map(student => (
                 <tr key={student.studentId}>
@@ -1707,20 +1735,22 @@ Please share this with the student securely.`);
             .filter(student => {
               const courseMatch = !filterByCourse || student.program === filterByCourse;
               const semesterMatch = !filterBySemester || student.semester?.toString() === filterBySemester;
-              return courseMatch && semesterMatch;
+              const nameMatch = !searchStudentName || student.name.toLowerCase().includes(searchStudentName.toLowerCase());
+              return courseMatch && semesterMatch && nameMatch;
             }).length === 0 && (
             <div className="text-center py-8 text-gray-500">
-              {filterByCourse || filterBySemester ? (
+              {filterByCourse || filterBySemester || searchStudentName ? (
                 <div>
                   <p>No students found matching the current filters.</p>
                   <button
                     onClick={() => {
                       setFilterByCourse('');
                       setFilterBySemester('');
+                      setSearchStudentName('');
                     }}
                     className="mt-2 text-blue-600 hover:text-blue-800 text-sm underline"
                   >
-                    Clear filters to see all students
+                    Clear all filters to see all students
                   </button>
                 </div>
               ) : (
