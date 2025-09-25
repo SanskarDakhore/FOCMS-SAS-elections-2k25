@@ -625,58 +625,74 @@ This action cannot be undone.`)) {
 
       let successCount = 0;
       const errors = [];
+      const uploadSummary = {
+        'BBA-Sem1': 0,
+        'BBA-Sem3': 0,
+        'BBA-Sem5': 0,
+        'MBA-Sem1': 0
+      };
 
       for (const [index, student] of jsonData.entries()) {
         try {
           // Auto-generate student ID if not provided
-          let studentId = student.studentId || student.StudentID || student.student_id;
+          let studentId = student.studentId || student.StudentID || student.student_id || student['Student ID'];
           if (!studentId) {
             studentId = generateStudentId();
           }
           
-          // Extract program and semester information
-          let program = student.program || student.Program || 'BBA'; // Default to BBA
-          let semester = student.semester || student.Semester || 1; // Default to 1
+          // Extract program and semester information with better handling
+          let program = student.program || student.Program || student.PROGRAM || '';
+          let semester = student.semester || student.Semester || student.SEMESTER || '';
           
           // Auto-detect program and semester from class field if available
-          const classField = student.class || student.Class || student.className || '';
+          const classField = student.class || student.Class || student.className || student['Class Name'] || '';
           if (classField) {
-            // Parse class like "BBA-Sem3", "MBA-Sem1", "BBA-3", etc.
-            const classMatch = classField.match(/(BBA|MBA)[-_\s]*(Sem)?(\d+)/i);
+            // Parse class like "BBA-Sem3", "MBA-Sem1", "BBA-3", "BBA 3", etc.
+            const classMatch = classField.match(/(BBA|MBA)[-_\s]*(Sem)?[-_\s]*(\d+)/i);
             if (classMatch) {
               program = classMatch[1].toUpperCase();
               semester = parseInt(classMatch[3]);
             }
           }
           
-          // Validate program
-          if (!['BBA', 'MBA'].includes(program.toUpperCase())) {
-            program = 'BBA'; // Default fallback
+          // If still no program detected, check student ID pattern
+          if (!program && studentId) {
+            if (studentId.toUpperCase().startsWith('BBA')) {
+              program = 'BBA';
+            } else if (studentId.toUpperCase().startsWith('MBA')) {
+              program = 'MBA';
+            }
+          }
+          
+          // Default fallbacks
+          if (!program || !['BBA', 'MBA'].includes(program.toUpperCase())) {
+            program = 'BBA'; // Default to BBA
           }
           program = program.toUpperCase();
           
+          // Convert semester to integer
+          semester = parseInt(semester) || 1;
+          
           // Validate semester based on program
           if (program === 'BBA') {
-            if (![1, 3, 5].includes(parseInt(semester))) {
+            if (![1, 3, 5].includes(semester)) {
               semester = 1; // Default to semester 1 for BBA
             }
           } else if (program === 'MBA') {
-            if (![1].includes(parseInt(semester))) {
-              semester = 1; // Only semester 1 for MBA
-            }
+            semester = 1; // Only semester 1 for MBA
           }
           
           // Generate class name based on program and semester
           const className = `${program}-Sem${semester}`;
           
           // Auto-generate password if not provided
-          const password = student.password || student.Password || generatePassword();
+          const password = student.password || student.Password || student.PASSWORD || generatePassword();
           
           const studentData = {
             studentId: studentId,
-            name: student.name || student.Name || student.fullName || 'Unknown Student',
+            name: student.name || student.Name || student.fullName || student['Full Name'] || 'Unknown Student',
             program: program,
-            semester: parseInt(semester),
+            semester: semester,
             class: className,
             password: password,
             hasVoted: false,
@@ -687,6 +703,9 @@ This action cannot be undone.`)) {
           
           await setDoc(doc(db, 'users', studentId), studentData);
           successCount++;
+          uploadSummary[className]++;
+          
+          console.log(`Added student: ${studentData.name} - ${studentData.program} Sem${studentData.semester}`);
         } catch (error) {
           console.error(`Error processing student at row ${index + 2}:`, error);
           errors.push(`Row ${index + 2}: ${error.message}`);
@@ -695,14 +714,23 @@ This action cannot be undone.`)) {
       
       loadData();
       
-      let message = "Successfully uploaded " + successCount + " students!\n\n";
+      let message = `Successfully uploaded ${successCount} students!\n\n`;
+      
+      // Show breakdown by semester
+      message += "Student Distribution:\n";
+      Object.keys(uploadSummary).forEach(key => {
+        if (uploadSummary[key] > 0) {
+          message += `• ${key}: ${uploadSummary[key]} students\n`;
+        }
+      });
+      
       if (errors.length > 0) {
-        message += "Errors encountered:\n" + errors.join('\n') + "\n\n";
+        message += "\nErrors encountered:\n" + errors.join('\n') + "\n";
       }
-      message += "Students organized by:\n";
+      
+      message += "\nProgram Structure:\n";
       message += "• BBA: Semesters 1, 3, 5\n";
-      message += "• MBA: Semester 1\n\n";
-      message += "Auto-generated credentials where needed.";
+      message += "• MBA: Semester 1\n";
       
       alert(message);
     } catch (error) {
@@ -865,19 +893,137 @@ Please share this with the student securely.`);
 
   // Function to export student credentials
   const exportCredentials = () => {
+    if (students.length === 0) {
+      alert('No students to export. Please add students first.');
+      return;
+    }
+    
     const credentials = students.map(student => ({
-      studentId: student.studentId,
-      name: student.name,
-      program: student.program,
-      semester: student.semester,
-      class: student.class,
-      password: student.password
+      studentId: student.studentId || 'N/A',
+      name: student.name || 'N/A',
+      program: student.program || 'N/A',
+      semester: student.semester || 'N/A',
+      class: student.class || 'N/A',
+      password: student.password || 'N/A',
+      hasVoted: student.hasVoted ? 'Yes' : 'No',
+      status: student.hasVoted ? 'Voted' : student.isLoggedIn ? 'Online' : 'Ready'
     }));
 
     const ws = XLSX.utils.json_to_sheet(credentials);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Student Credentials');
-    XLSX.writeFile(wb, 'student-credentials.xlsx');
+    
+    const timestamp = new Date().toISOString().slice(0, 10);
+    const filename = `student-credentials-${timestamp}.xlsx`;
+    XLSX.writeFile(wb, filename);
+    
+    // Show summary of what was exported
+    const programCount = {};
+    credentials.forEach(student => {
+      const key = `${student.program}-Sem${student.semester}`;
+      programCount[key] = (programCount[key] || 0) + 1;
+    });
+    
+    let summary = `Successfully exported ${credentials.length} student credentials!\n\n`;
+    summary += "Export Summary:\n";
+    Object.keys(programCount).sort().forEach(key => {
+      summary += `• ${key}: ${programCount[key]} students\n`;
+    });
+    summary += `\nFile saved as: ${filename}`;
+    
+    alert(summary);
+  };
+
+  // Function to export credentials by specific semester
+  const exportCredentialsBySemester = (targetSemester) => {
+    const filteredStudents = students.filter(student => 
+      student.semester?.toString() === targetSemester.toString()
+    );
+    
+    if (filteredStudents.length === 0) {
+      alert(`No students found in semester ${targetSemester}. Please check the semester filter.`);
+      return;
+    }
+    
+    const credentials = filteredStudents.map(student => ({
+      studentId: student.studentId || 'N/A',
+      name: student.name || 'N/A',
+      program: student.program || 'N/A',
+      semester: student.semester || 'N/A',
+      class: student.class || 'N/A',
+      password: student.password || 'N/A',
+      hasVoted: student.hasVoted ? 'Yes' : 'No',
+      status: student.hasVoted ? 'Voted' : student.isLoggedIn ? 'Online' : 'Ready'
+    }));
+
+    const ws = XLSX.utils.json_to_sheet(credentials);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, `Semester ${targetSemester} Credentials`);
+    
+    const timestamp = new Date().toISOString().slice(0, 10);
+    const filename = `semester-${targetSemester}-credentials-${timestamp}.xlsx`;
+    XLSX.writeFile(wb, filename);
+    
+    // Show summary of what was exported
+    const programCount = {};
+    credentials.forEach(student => {
+      const key = student.program;
+      programCount[key] = (programCount[key] || 0) + 1;
+    });
+    
+    let summary = `Successfully exported ${credentials.length} student credentials for Semester ${targetSemester}!\n\n`;
+    summary += "Export Summary:\n";
+    Object.keys(programCount).sort().forEach(key => {
+      summary += `• ${key}: ${programCount[key]} students\n`;
+    });
+    summary += `\nFile saved as: ${filename}`;
+    
+    alert(summary);
+  };
+
+  // Function to show semester export modal
+  const showSemesterExportModal = () => {
+    // Get unique semesters from students
+    const uniqueSemesters = [...new Set(students.map(s => s.semester).filter(Boolean))].sort();
+    
+    if (uniqueSemesters.length === 0) {
+      alert('No students with semester information found.');
+      return;
+    }
+    
+    // Create detailed breakdown for each semester
+    const semesterBreakdown = uniqueSemesters.map(sem => {
+      const semesterStudents = students.filter(s => s.semester === sem);
+      const programBreakdown = {};
+      semesterStudents.forEach(student => {
+        const program = student.program || 'Unknown';
+        programBreakdown[program] = (programBreakdown[program] || 0) + 1;
+      });
+      
+      const programSummary = Object.keys(programBreakdown)
+        .map(prog => `${prog}: ${programBreakdown[prog]}`)
+        .join(', ');
+      
+      return `Semester ${sem}: ${semesterStudents.length} students (${programSummary})`;
+    });
+    
+    const selectedSemester = prompt(
+      `🎓 Export Student Credentials by Semester\n\n` +
+      `Available semesters with student count:\n\n` +
+      `${semesterBreakdown.join('\n')}\n\n` +
+      `Enter the semester number you want to export (e.g., 1, 3, 5):`,
+      uniqueSemesters[0]
+    );
+    
+    if (selectedSemester && uniqueSemesters.includes(parseInt(selectedSemester))) {
+      exportCredentialsBySemester(selectedSemester);
+    } else if (selectedSemester) {
+      alert(`❌ Invalid semester selection: "${selectedSemester}"
+
+Available semesters: ${uniqueSemesters.join(', ')}
+
+Please try again.`);
+    }
   };
 
   // Function to export students organized by semester
@@ -939,14 +1085,26 @@ Please share this with the student securely.`);
     const templateData = [];
     
     semesters.forEach(semester => {
-      // Add sample rows for each semester
-      for (let i = 1; i <= 3; i++) {
+      // Add sample rows for each semester with better examples
+      for (let i = 1; i <= 5; i++) {
         templateData.push({
-          studentId: '',
-          name: `Sample Student ${i}`,
+          studentId: `${program}${semester}0${i}`,
+          name: `Sample ${program} Student ${i}`,
           program: program,
           semester: semester,
           class: `${program}-Sem${semester}`,
+          password: `pass${i}23`
+        });
+      }
+      
+      // Add separator row
+      if (semester !== semesters[semesters.length - 1]) {
+        templateData.push({
+          studentId: '',
+          name: '--- Next Semester ---',
+          program: '',
+          semester: '',
+          class: '',
           password: ''
         });
       }
@@ -962,6 +1120,10 @@ Please share this with the student securely.`);
     alert(`Downloaded ${program} template with sample data for:\n` +
           `• Semesters: ${semesters.join(', ')}\n` +
           `• File: ${filename}\n\n` +
+          'Template includes:\n' +
+          '• 5 sample students per semester\n' +
+          '• Proper column structure\n' +
+          '• Example data format\n\n' +
           'Fill in your student data and upload!');
   };
 
@@ -1492,7 +1654,16 @@ Please share this with the student securely.`);
               disabled={students.length === 0}
             >
               <Download className="h-4 w-4 mr-2" />
-              Export Credentials
+              Export All Credentials
+            </button>
+            <button
+              onClick={showSemesterExportModal}
+              className="btn-primary flex items-center"
+              disabled={students.length === 0}
+              title="Export credentials for a specific semester"
+            >
+              <Download className="h-4 w-4 mr-2" />
+              Export by Semester
             </button>
             <div className="relative group">
               <label className="btn-secondary flex items-center cursor-pointer">
@@ -1535,7 +1706,7 @@ Please share this with the student securely.`);
             </div>
           </div>
           
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
             <div>
               <label className="form-label">Filter by Course</label>
               <select 
@@ -1585,6 +1756,22 @@ Please share this with the student securely.`);
                 </button>
                 <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 hidden group-hover:block bg-gray-800 text-white text-xs rounded py-1 px-2 w-48 z-10">
                   <p>Export students organized by course and semester</p>
+                </div>
+              </div>
+            </div>
+            <div className="flex items-end">
+              <div className="relative group w-full">
+                <button
+                  onClick={showSemesterExportModal}
+                  className="btn-secondary w-full flex items-center justify-center"
+                  disabled={students.length === 0}
+                  title="Export credentials for specific semester only"
+                >
+                  <Download className="h-4 w-4 mr-2" />
+                  Export Credentials by Semester
+                </button>
+                <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 hidden group-hover:block bg-gray-800 text-white text-xs rounded py-1 px-2 w-64 z-10">
+                  <p>Export student credentials (ID, name, password) for a specific semester</p>
                 </div>
               </div>
             </div>
@@ -1735,22 +1922,20 @@ Please share this with the student securely.`);
             .filter(student => {
               const courseMatch = !filterByCourse || student.program === filterByCourse;
               const semesterMatch = !filterBySemester || student.semester?.toString() === filterBySemester;
-              const nameMatch = !searchStudentName || student.name.toLowerCase().includes(searchStudentName.toLowerCase());
-              return courseMatch && semesterMatch && nameMatch;
+              return courseMatch && semesterMatch;
             }).length === 0 && (
             <div className="text-center py-8 text-gray-500">
-              {filterByCourse || filterBySemester || searchStudentName ? (
+              {filterByCourse || filterBySemester ? (
                 <div>
                   <p>No students found matching the current filters.</p>
                   <button
                     onClick={() => {
                       setFilterByCourse('');
                       setFilterBySemester('');
-                      setSearchStudentName('');
                     }}
                     className="mt-2 text-blue-600 hover:text-blue-800 text-sm underline"
                   >
-                    Clear all filters to see all students
+                    Clear filters to see all students
                   </button>
                 </div>
               ) : (
@@ -1762,10 +1947,20 @@ Please share this with the student securely.`);
         
         {/* Template Info */}
         <div className="mt-6 p-4 bg-blue-50 rounded-lg border border-blue-200">
-          <h4 className="font-medium text-blue-900 mb-2">📄 Excel/CSV Upload Templates</h4>
+          <h4 className="font-medium text-blue-900 mb-2">📄 Excel/CSV Upload Templates & Export Options</h4>
           <p className="text-blue-800 text-sm mb-3">
-            Download semester-specific templates for uploading students:
+            Download semester-specific templates for uploading students or export credentials by semester:
           </p>
+          
+          {/* Export Options */}
+          <div className="mb-4 p-3 bg-green-50 border border-green-200 rounded-lg">
+            <h5 className="font-medium text-green-900 mb-2">📊 Export Credentials Options</h5>
+            <div className="text-sm text-green-800 space-y-1">
+              <p>• <strong>Export All Credentials:</strong> Download credentials for all students in one file</p>
+              <p>• <strong>Export by Semester:</strong> Choose a specific semester to export credentials for</p>
+              <p>• <strong>Export by Semester (Organized):</strong> Create separate sheets for each semester</p>
+            </div>
+          </div>
           
           {/* Template Download Buttons */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-4">
