@@ -30,7 +30,8 @@ import {
   Calendar,
   Clock,
   Vote,
-  Search
+  Search,
+  RefreshCw
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import LoadingSpinner from './LoadingSpinner';
@@ -62,6 +63,7 @@ function AdminDashboard() {
     allowCrossDepartmentVoting: true,
     isActive: false
   });
+  const [selectedStudents, setSelectedStudents] = useState([]);
 
   // Error boundary state
   const [error, setError] = useState(null);
@@ -264,17 +266,33 @@ function AdminDashboard() {
 
   const handleEditStudent = async (formData) => {
     try {
-      await updateDoc(doc(db, 'users', editItem.studentId), {
+      // Ensure we have valid program and semester values
+      const program = formData.program || (editItem?.program) || 'BBA';
+      const semester = formData.semester || (editItem?.semester) || 1;
+      const className = `${program}-Sem${semester}`;
+      
+      // Prepare update data
+      const updateData = {
         name: formData.name,
-        class: formData.class,
-        password: formData.password,
+        program: program,
+        semester: parseInt(semester),
+        class: className,
         updatedAt: new Date()
-      });
+      };
+      
+      // Only update password if provided
+      if (formData.password && formData.password.trim() !== '') {
+        updateData.password = formData.password;
+      }
+      
+      await updateDoc(doc(db, 'users', editItem.studentId), updateData);
       loadData();
       setShowModal(false);
       setEditItem(null);
+      alert('Student updated successfully!');
     } catch (error) {
       console.error('Error updating student:', error);
+      alert('Error updating student: ' + error.message + '. Please try again.');
     }
   };
 
@@ -357,6 +375,26 @@ This action cannot be undone.`)) {
     }
   };
 
+  // New function for selective delete option
+  const handleSelectiveDelete = async (studentId, deleteType) => {
+    const student = students.find(s => s.studentId === studentId);
+    if (!student) {
+      alert('Student not found.');
+      return;
+    }
+
+    switch (deleteType) {
+      case 'votes':
+        await handleDeleteStudentVotes(studentId);
+        break;
+      case 'account':
+        await handleDeleteStudent(studentId);
+        break;
+      default:
+        alert('Invalid delete option.');
+    }
+  };
+
   const handleDeleteAllStudents = async () => {
     if (!confirm('Are you sure you want to delete ALL students? This will also delete all their votes. This action cannot be undone.')) {
       return;
@@ -378,6 +416,41 @@ This action cannot be undone.`)) {
     } catch (error) {
       console.error('Error deleting all students:', error);
       alert('Error deleting all students. Please try again.');
+    }
+  };
+
+  const handleDeleteSelectedStudents = async () => {
+    if (selectedStudents.length === 0) {
+      alert('No students selected. Please select at least one student to delete.');
+      return;
+    }
+    
+    if (!confirm(`Are you sure you want to delete ${selectedStudents.length} selected student(s)? This will also delete all their votes. This action cannot be undone.`)) {
+      return;
+    }
+    
+    try {
+      // Delete votes for selected students
+      for (const studentId of selectedStudents) {
+        const studentVotes = votes.filter(vote => vote.voterId === studentId);
+        for (const vote of studentVotes) {
+          await deleteDoc(doc(db, 'votes', vote.id));
+        }
+      }
+      
+      // Delete selected students
+      for (const studentId of selectedStudents) {
+        await deleteDoc(doc(db, 'users', studentId));
+      }
+      
+      // Clear selection
+      setSelectedStudents([]);
+      
+      loadData();
+      alert(`${selectedStudents.length} student(s) and their votes have been successfully deleted!`);
+    } catch (error) {
+      console.error('Error deleting selected students:', error);
+      alert('Error deleting selected students. Please try again.');
     }
   };
 
@@ -593,6 +666,8 @@ This action cannot be undone.`)) {
       // MBA Students
       { studentId: 'MBA101', name: 'Grace Hopper', program: 'MBA', semester: 1, class: 'MBA-Sem1', password: 'pass123' },
       { studentId: 'MBA102', name: 'Alan Turing', program: 'MBA', semester: 1, class: 'MBA-Sem1', password: 'pass123' },
+      { studentId: 'MBA301', name: 'Isaac Newton', program: 'MBA', semester: 3, class: 'MBA-Sem3', password: 'pass123' },
+      { studentId: 'MBA302', name: 'Marie Curie', program: 'MBA', semester: 3, class: 'MBA-Sem3', password: 'pass123' },
     ];
 
     try {
@@ -629,7 +704,8 @@ This action cannot be undone.`)) {
         'BBA-Sem1': 0,
         'BBA-Sem3': 0,
         'BBA-Sem5': 0,
-        'MBA-Sem1': 0
+        'MBA-Sem1': 0,
+      'MBA-Sem3': 0
       };
 
       for (const [index, student] of jsonData.entries()) {
@@ -679,7 +755,9 @@ This action cannot be undone.`)) {
               semester = 1; // Default to semester 1 for BBA
             }
           } else if (program === 'MBA') {
-            semester = 1; // Only semester 1 for MBA
+            if (![1, 3].includes(semester)) {
+              semester = 1; // Default to semester 1 for MBA
+            }
           }
           
           // Generate class name based on program and semester
@@ -1624,6 +1702,14 @@ Please try again.`);
               Add Student
             </button>
             <button
+              onClick={handleDeleteSelectedStudents}
+              className="btn-danger flex items-center"
+              disabled={selectedStudents.length === 0}
+            >
+              <Trash2 className="h-4 w-4 mr-2" />
+              Delete Selected ({selectedStudents.length})
+            </button>
+            <button
               onClick={handleDeleteAllStudents}
               className="btn-danger flex items-center"
               disabled={students.length === 0}
@@ -1811,6 +1897,33 @@ Please try again.`);
           <table className="min-w-full divide-y divide-gray-200">
             <thead className="bg-gray-50">
               <tr>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <input 
+                    type="checkbox" 
+                    checked={selectedStudents.length > 0 && selectedStudents.length === students.filter(student => {
+                      const courseMatch = !filterByCourse || student.program === filterByCourse;
+                      const semesterMatch = !filterBySemester || student.semester?.toString() === filterBySemester;
+                      const nameMatch = !searchStudentName || student.name.toLowerCase().includes(searchStudentName.toLowerCase());
+                      return courseMatch && semesterMatch && nameMatch;
+                    }).length}
+                    onChange={(e) => {
+                      if (e.target.checked) {
+                        // Select all visible students
+                        const visibleStudents = students.filter(student => {
+                          const courseMatch = !filterByCourse || student.program === filterByCourse;
+                          const semesterMatch = !filterBySemester || student.semester?.toString() === filterBySemester;
+                          const nameMatch = !searchStudentName || student.name.toLowerCase().includes(searchStudentName.toLowerCase());
+                          return courseMatch && semesterMatch && nameMatch;
+                        });
+                        setSelectedStudents(visibleStudents.map(s => s.studentId));
+                      } else {
+                        // Deselect all
+                        setSelectedStudents([]);
+                      }
+                    }}
+                    className="h-4 w-4 text-blue-600 rounded"
+                  />
+                </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Student ID</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Name</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Course</th>
@@ -1831,6 +1944,20 @@ Please try again.`);
                 })
                 .map(student => (
                 <tr key={student.studentId}>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                    <input 
+                      type="checkbox" 
+                      checked={selectedStudents.includes(student.studentId)}
+                      onChange={(e) => {
+                        if (e.target.checked) {
+                          setSelectedStudents(prev => [...prev, student.studentId]);
+                        } else {
+                          setSelectedStudents(prev => prev.filter(id => id !== student.studentId));
+                        }
+                      }}
+                      className="h-4 w-4 text-blue-600 rounded"
+                    />
+                  </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
                     {student.studentId}
                   </td>
@@ -1894,25 +2021,32 @@ Please try again.`);
                       <Edit className="h-4 w-4 mr-1" />
                       Edit
                     </button>
-                    {student.hasVoted ? (
-                      <button
-                        onClick={() => handleDeleteStudentVotes(student.studentId)}
-                        className="text-orange-600 hover:text-orange-900 inline-flex items-center"
-                        title="Delete votes and allow student to vote again"
-                      >
-                        <Vote className="h-4 w-4 mr-1" />
-                        Reset Votes
-                      </button>
-                    ) : (
-                      <button
-                        onClick={() => handleDeleteStudent(student.studentId)}
-                        className="text-red-600 hover:text-red-900 inline-flex items-center"
-                        title="Delete student completely"
-                      >
+                    <div className="relative inline-block group">
+                      <button className="text-gray-600 hover:text-gray-900 inline-flex items-center">
                         <Trash2 className="h-4 w-4 mr-1" />
                         Delete
                       </button>
-                    )}
+                      <div className="absolute right-0 mt-2 w-48 bg-white rounded-md shadow-lg py-1 hidden group-hover:block z-10 border border-gray-200">
+                        {student.hasVoted ? (
+                          <button
+                            onClick={() => handleDeleteStudentVotes(student.studentId)}
+                            className="block w-full text-left px-4 py-2 text-sm text-orange-600 hover:bg-orange-50"
+                            title="Delete votes and allow student to vote again"
+                          >
+                            <Vote className="h-4 w-4 inline mr-1" />
+                            Reset Votes Only
+                          </button>
+                        ) : null}
+                        <button
+                          onClick={() => handleDeleteStudent(student.studentId)}
+                          className="block w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50"
+                          title="Delete student completely"
+                        >
+                          <Trash2 className="h-4 w-4 inline mr-1" />
+                          Delete Account
+                        </button>
+                      </div>
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -1980,7 +2114,7 @@ Please try again.`);
               BBA Template
             </button>
             <button
-              onClick={() => generateSemesterTemplate('MBA', [1])}
+              onClick={() => generateSemesterTemplate('MBA', [1, 3])}
               className="inline-flex items-center justify-center px-3 py-2 bg-purple-500 text-white text-sm rounded hover:bg-purple-600 transition-colors"
             >
               <Download className="h-4 w-4 mr-1" />
@@ -1995,14 +2129,14 @@ Please try again.`);
               <p>• <strong>studentId:</strong> Optional (auto-generated if empty)</p>
               <p>• <strong>name:</strong> Student's full name (required)</p>
               <p>• <strong>program:</strong> BBA or MBA (required)</p>
-              <p>• <strong>semester:</strong> For BBA: 1, 3, 5 | For MBA: 1 only</p>
+              <p>• <strong>semester:</strong> For BBA: 1, 3, 5 | For MBA: 1 and 3</p>
               <p>• <strong>class:</strong> Optional (auto-generated from program + semester)</p>
               <p>• <strong>password:</strong> Optional (auto-generated if empty)</p>
             </div>
             <div className="mt-3 p-2 bg-blue-100 rounded">
-              <p className="font-medium text-blue-900">📚 Semester Rules:</p>
+              <p className="font-medium text-blue-900">🎓 Semester Rules:</p>
               <p>• BBA students: Semester 1, 3, 5 available</p>
-              <p>• MBA students: Only Semester 1 available</p>
+              <p>• MBA students: Semester 1 and 3 available</p>
             </div>
           </div>
         </div>
@@ -2382,6 +2516,13 @@ Please try again.`);
               </div>
             </div>
             <div className="flex items-center space-x-6">
+              <button
+                onClick={loadData}
+                className="flex items-center text-gray-600 hover:text-gray-900 transition-colors px-3 py-2 rounded-lg hover:bg-gray-100"
+              >
+                <RefreshCw className="h-5 w-5 mr-2" />
+                Refresh Data
+              </button>
               <LiveClock className="bg-gray-100 px-4 py-2 rounded-lg" showIcon={true} showDate={false} />
               <span className="text-sm text-gray-600">Welcome, {userProfile?.name}</span>
               <button
@@ -2538,12 +2679,15 @@ Please try again.`);
                         </>
                       )}
                       {(selectedCourse || editItem?.program) === 'MBA' && (
-                        <option value="1">Semester 1</option>
+                        <>
+                          <option value="1">Semester 1</option>
+                          <option value="3">Semester 3</option>
+                        </>
                       )}
                     </select>
                     <p className="text-xs text-gray-500 mt-1">
                       {(selectedCourse || editItem?.program) === 'BBA' ? 'BBA: Semester 1, 3, 5 available' : 
-                       (selectedCourse || editItem?.program) === 'MBA' ? 'MBA: Only Semester 1 available' : 
+                       (selectedCourse || editItem?.program) === 'MBA' ? 'MBA: Semesters 1 and 3 available' : 
                        'Select a course first'}
                     </p>
                   </div>

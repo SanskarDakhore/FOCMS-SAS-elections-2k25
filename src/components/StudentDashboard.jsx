@@ -1,13 +1,13 @@
 import React, { useEffect, useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
-import { Vote, LogOut, User, Clock, AlertTriangle, Calendar, CreditCard, Star, Trophy, CheckCircle } from 'lucide-react';
+import { Vote, LogOut, User, Clock, AlertTriangle, Calendar, CreditCard, Star, Trophy, CheckCircle, RefreshCw } from 'lucide-react';
 import CountdownTimer from './CountdownTimer';
 import UpcomingElection from './UpcomingElection';
 import LiveClock from './LiveClock';
 
 function StudentDashboard() {
-  const { userProfile, logout, getVotingStatus, isVotingActive, checkVotingSchedule, getTotalPositions, getPositions } = useAuth();
+  const { userProfile, logout, getVotingStatus, isVotingActive, checkVotingSchedule, getTotalPositions, getPositions, refreshVotingSchedule } = useAuth();
   const navigate = useNavigate();
   const [totalPositions, setTotalPositions] = useState(0);
   const [positions, setPositions] = useState([]);
@@ -20,6 +20,7 @@ function StudentDashboard() {
     participationRate: 0,
     lastLogin: null
   });
+  const [refreshing, setRefreshing] = useState(false);
 
   useEffect(() => {
     initializeDashboard();
@@ -63,6 +64,46 @@ function StudentDashboard() {
       console.error('Error initializing dashboard:', error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    try {
+      // Refresh voting schedule
+      await refreshVotingSchedule();
+      
+      // Get total positions for credit calculation
+      const totalPos = await getTotalPositions();
+      const positionsData = await getPositions();
+      
+      setTotalPositions(totalPos);
+      setPositions(positionsData);
+      setVotingCredits(totalPos); // Each position = 1 credit
+      setUsedCredits(userProfile?.hasVoted ? totalPos : 0); // If voted, all credits used
+      
+      // Set mock stats (in a real app, this would come from the database)
+      setStats({
+        totalVotes: userProfile?.hasVoted ? totalPos : 0,
+        participationRate: userProfile?.hasVoted ? 100 : 0,
+        lastLogin: userProfile?.lastLoginTime || new Date()
+      });
+      
+      // Set mock voting history (in a real app, this would come from the database)
+      if (userProfile?.hasVoted) {
+        setVotingHistory([
+          {
+            id: 1,
+            date: userProfile?.voteTimestamp || new Date(),
+            positions: positionsData.length,
+            status: 'Completed'
+          }
+        ]);
+      }
+    } catch (error) {
+      console.error('Error refreshing dashboard:', error);
+    } finally {
+      setRefreshing(false);
     }
   };
 
@@ -112,6 +153,14 @@ function StudentDashboard() {
               </div>
             </div>
             <div className="flex items-center space-x-6">
+              <button
+                onClick={handleRefresh}
+                disabled={refreshing}
+                className="flex items-center text-gray-600 hover:text-gray-900 transition-colors px-4 py-2 rounded-lg hover:bg-gray-100 disabled:opacity-50"
+              >
+                <RefreshCw className={`h-5 w-5 mr-2 ${refreshing ? 'animate-spin' : ''}`} />
+                {refreshing ? 'Refreshing...' : 'Refresh'}
+              </button>
               <LiveClock className="bg-blue-100 px-4 py-2 rounded-lg" showIcon={true} showDate={false} />
               <button
                 onClick={handleLogout}

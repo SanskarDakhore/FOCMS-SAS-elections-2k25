@@ -14,7 +14,8 @@ import {
   query,
   where,
   getDocs,
-  orderBy 
+  orderBy,
+  deleteDoc
 } from 'firebase/firestore';
 import { auth, db } from '../firebase';
 import { generateDeviceFingerprint } from '../utils/deviceUtils';
@@ -151,6 +152,56 @@ export function AuthProvider({ children }) {
       return [];
     }
   };
+
+  // Delete student votes (for selective delete option)
+  const deleteStudentVotes = async (studentId) => {
+    try {
+      // Get all votes by this student
+      const votesQuery = query(collection(db, 'votes'), where('voterId', '==', studentId));
+      const votesSnapshot = await getDocs(votesQuery);
+      
+      // Delete all votes by this student
+      const deletePromises = votesSnapshot.docs.map(doc => deleteDoc(doc.ref));
+      await Promise.all(deletePromises);
+      
+      // Reset student's voting status
+      const userDocRef = doc(db, 'users', studentId);
+      await updateDoc(userDocRef, {
+        hasVoted: false,
+        voteTimestamp: null,
+        isLoggedIn: false,
+        deviceId: null,
+        updatedAt: new Date()
+      });
+      
+      // Remove device association if exists
+      if (deviceId) {
+        try {
+          const deviceRef = doc(db, 'devices', `${deviceId}_${studentId}`);
+          await deleteDoc(deviceRef);
+        } catch (deviceError) {
+          console.log('Device record not found or already deleted:', deviceError);
+        }
+      }
+      
+      // Update local state if this is the current user
+      if (userProfile && userProfile.studentId === studentId) {
+        setUserProfile(prev => ({
+          ...prev,
+          hasVoted: false,
+          voteTimestamp: null,
+          isLoggedIn: false,
+          deviceId: null
+        }));
+      }
+      
+      return { success: true, message: 'Student votes deleted successfully' };
+    } catch (error) {
+      console.error('Error deleting student votes:', error);
+      return { success: false, message: 'Error deleting student votes' };
+    }
+  };
+
   // Initialize device fingerprint and load voting schedule
   useEffect(() => {
     const initDeviceId = async () => {
@@ -276,7 +327,6 @@ export function AuthProvider({ children }) {
       };
       
       setUserProfile(studentProfile);
-      
       // Set a mock currentUser for students to satisfy routing logic
       setCurrentUser({ uid: studentId, isStudent: true });
       
@@ -472,7 +522,8 @@ export function AuthProvider({ children }) {
     checkVotingSchedule,
     refreshVotingSchedule,
     getTotalPositions,
-    getPositions
+    getPositions,
+    deleteStudentVotes // Add the new function to the context value
   };
 
   return (
