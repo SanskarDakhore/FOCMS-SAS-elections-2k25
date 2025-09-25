@@ -297,6 +297,64 @@ function AdminDashboard() {
     }
   };
 
+  const handleDeleteStudentVotes = async (studentId) => {
+    const student = students.find(s => s.studentId === studentId);
+    if (!student) {
+      alert('Student not found.');
+      return;
+    }
+
+    const studentVotes = votes.filter(v => v.voterId === studentId);
+    
+    if (!confirm(`Are you sure you want to delete ALL votes for ${student.name} (${studentId})?
+
+This will:
+• Delete ${studentVotes.length} vote(s) from the system
+• Reset their voting status to allow them to vote again
+• Remove their vote timestamp
+
+This action cannot be undone.`)) {
+      return;
+    }
+    
+    try {
+      // Delete all votes by this student
+      for (const vote of studentVotes) {
+        await deleteDoc(doc(db, 'votes', vote.id));
+      }
+      
+      // Reset student's voting status
+      await updateDoc(doc(db, 'users', studentId), {
+        hasVoted: false,
+        voteTimestamp: null,
+        isLoggedIn: false,
+        deviceId: null,
+        updatedAt: new Date()
+      });
+      
+      // Remove device association if exists
+      const deviceRecord = `${student.deviceId}_${studentId}`;
+      if (student.deviceId) {
+        try {
+          await deleteDoc(doc(db, 'devices', deviceRecord));
+        } catch (deviceError) {
+          console.log('Device record not found or already deleted:', deviceError);
+        }
+      }
+      
+      alert(`✅ Successfully deleted ${studentVotes.length} vote(s) for ${student.name}!
+
+• Student can now vote again
+• All voting restrictions have been removed
+• Device association has been cleared`);
+      
+      loadData();
+    } catch (error) {
+      console.error('Error deleting student votes:', error);
+      alert('❌ Error deleting student votes. Please try again.');
+    }
+  };
+
   const handleDeleteAllStudents = async () => {
     if (!confirm('Are you sure you want to delete ALL students? This will also delete all their votes. This action cannot be undone.')) {
       return;
@@ -705,6 +763,74 @@ New Password: ${student.password}
     } catch (error) {
       console.error('Error resetting all passwords:', error);
       alert('Error resetting all passwords. Please try again.');
+    }
+  };
+
+  const handleResetAllVotes = async () => {
+    const votedStudents = students.filter(s => s.hasVoted);
+    
+    if (votedStudents.length === 0) {
+      alert('No students have voted yet.');
+      return;
+    }
+
+    if (!confirm(`Are you sure you want to RESET ALL VOTES?
+
+This will:
+• Delete ${votes.length} total vote(s) from the system
+• Reset voting status for ${votedStudents.length} student(s)
+• Allow all students to vote again
+• Clear all device associations
+
+This action cannot be undone and should only be used for testing or emergency situations!`)) {
+      return;
+    }
+    
+    if (!confirm('⚠️ FINAL CONFIRMATION: This will permanently delete ALL election results. Are you absolutely sure?')) {
+      return;
+    }
+    
+    try {
+      // Delete all votes
+      const allVotes = [...votes];
+      for (const vote of allVotes) {
+        await deleteDoc(doc(db, 'votes', vote.id));
+      }
+      
+      // Reset all students' voting status
+      for (const student of votedStudents) {
+        await updateDoc(doc(db, 'users', student.studentId), {
+          hasVoted: false,
+          voteTimestamp: null,
+          isLoggedIn: false,
+          deviceId: null,
+          updatedAt: new Date()
+        });
+      }
+      
+      // Clear all device associations (bulk delete from devices collection)
+      try {
+        const devicesQuery = query(collection(db, 'devices'));
+        const devicesSnapshot = await getDocs(devicesQuery);
+        for (const deviceDoc of devicesSnapshot.docs) {
+          await deleteDoc(doc(db, 'devices', deviceDoc.id));
+        }
+      } catch (deviceError) {
+        console.log('Error clearing device associations:', deviceError);
+      }
+      
+      alert(`✅ Successfully reset all votes!
+
+• Deleted ${allVotes.length} vote(s)
+• Reset ${votedStudents.length} student(s)
+• Cleared all device associations
+
+All students can now vote again.`);
+      
+      loadData();
+    } catch (error) {
+      console.error('Error resetting all votes:', error);
+      alert('❌ Error resetting all votes. Please try again.');
     }
   };
 
@@ -1350,6 +1476,15 @@ Please share this with the student securely.`);
               Reset All Passwords
             </button>
             <button
+              onClick={handleResetAllVotes}
+              className="btn-warning flex items-center"
+              disabled={students.filter(s => s.hasVoted).length === 0}
+              title="Reset all votes and allow students to vote again"
+            >
+              <Vote className="h-4 w-4 mr-2" />
+              Reset All Votes
+            </button>
+            <button
               onClick={exportCredentials}
               className="btn-secondary flex items-center"
               disabled={students.length === 0}
@@ -1468,6 +1603,7 @@ Please share this with the student securely.`);
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Semester</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Class</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Votes</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
               </tr>
             </thead>
@@ -1514,6 +1650,22 @@ Please share this with the student securely.`);
                       {student.hasVoted ? 'Voted' : student.isLoggedIn ? 'Online' : 'Ready'}
                     </span>
                   </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                    <div className="flex items-center">
+                      <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
+                        votes.filter(v => v.voterId === student.studentId).length > 0
+                          ? 'bg-purple-100 text-purple-800'
+                          : 'bg-gray-100 text-gray-500'
+                      }`}>
+                        {votes.filter(v => v.voterId === student.studentId).length} vote{votes.filter(v => v.voterId === student.studentId).length !== 1 ? 's' : ''}
+                      </span>
+                      {student.hasVoted && student.voteTimestamp && (
+                        <span className="ml-2 text-xs text-gray-400" title={`Voted on ${new Date(student.voteTimestamp.seconds * 1000).toLocaleString()}`}>
+                          {new Date(student.voteTimestamp.seconds * 1000).toLocaleDateString()}
+                        </span>
+                      )}
+                    </div>
+                  </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm font-medium space-x-2">
                     <button
                       onClick={() => { 
@@ -1527,15 +1679,25 @@ Please share this with the student securely.`);
                       <Edit className="h-4 w-4 mr-1" />
                       Edit
                     </button>
-                    <button
-                      onClick={() => handleDeleteStudent(student.studentId)}
-                      className="text-red-600 hover:text-red-900 inline-flex items-center"
-                      disabled={student.hasVoted}
-                      title={student.hasVoted ? 'Cannot delete student who has already voted' : 'Delete student'}
-                    >
-                      <Trash2 className="h-4 w-4 mr-1" />
-                      Delete
-                    </button>
+                    {student.hasVoted ? (
+                      <button
+                        onClick={() => handleDeleteStudentVotes(student.studentId)}
+                        className="text-orange-600 hover:text-orange-900 inline-flex items-center"
+                        title="Delete votes and allow student to vote again"
+                      >
+                        <Vote className="h-4 w-4 mr-1" />
+                        Reset Votes
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => handleDeleteStudent(student.studentId)}
+                        className="text-red-600 hover:text-red-900 inline-flex items-center"
+                        title="Delete student completely"
+                      >
+                        <Trash2 className="h-4 w-4 mr-1" />
+                        Delete
+                      </button>
+                    )}
                   </td>
                 </tr>
               ))}
