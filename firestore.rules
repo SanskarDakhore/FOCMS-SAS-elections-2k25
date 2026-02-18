@@ -2,18 +2,95 @@ rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
+    function isAuthenticated() {
+      return request.auth != null;
+    }
 
-    // This rule allows anyone with your Firestore database reference to view, edit,
-    // and delete all data in your Firestore database. It is useful for getting
-    // started, but it is configured to expire after 30 days because it
-    // leaves your app open to attackers. At that time, all client
-    // requests to your Firestore database will be denied.
-    //
-    // Make sure to write security rules for your app before that time, or else
-    // all client requests to your Firestore database will be denied until you Update
-    // your rules
+    function isAdmin() {
+      return isAuthenticated() &&
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid));
+    }
+
+    function isVotingActive() {
+      return exists(/databases/$(database)/documents/settings/electionConfig) &&
+        get(/databases/$(database)/documents/settings/electionConfig).data.isActive == true &&
+        get(/databases/$(database)/documents/settings/electionConfig).data.votingStart != null &&
+        get(/databases/$(database)/documents/settings/electionConfig).data.votingEnd != null &&
+        request.time >= get(/databases/$(database)/documents/settings/electionConfig).data.votingStart &&
+        request.time <= get(/databases/$(database)/documents/settings/electionConfig).data.votingEnd;
+    }
+
+    // Allow a student client (no Firebase Auth in current app) to change only session/vote state.
+    function isAllowedStudentStateUpdate(userId) {
+      return request.resource.data.studentId == userId &&
+        resource.data.studentId == userId &&
+        request.resource.data.diff(resource.data).changedKeys().hasOnly([
+          'isLoggedIn',
+          'deviceId',
+          'lastLoginTime',
+          'hasVoted',
+          'voteTimestamp',
+          'updatedAt'
+        ]);
+    }
+
+    match /admins/{adminId} {
+      // Bootstrap-safe read: signed-in admin account can read its own admin doc.
+      allow read: if isAuthenticated() && request.auth.uid == adminId;
+      allow write: if isAdmin();
+    }
+
+    match /settings/{settingId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /positions/{positionId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /candidates/{candidateId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /users/{userId} {
+      // Student login flow reads by known studentId doc id.
+      allow get: if true;
+      allow list: if isAdmin();
+      allow create, delete: if isAdmin();
+      allow update: if isAdmin() || isAllowedStudentStateUpdate(userId);
+    }
+
+    match /votes/{voteId} {
+      allow read: if isAdmin();
+      allow create: if
+        request.resource.data.positionId is string &&
+        request.resource.data.candidateId is string &&
+        request.resource.data.voterId is string &&
+        request.resource.data.deviceId is string &&
+        request.resource.data.timestamp is timestamp &&
+        exists(/databases/$(database)/documents/users/$(request.resource.data.voterId)) &&
+        get(/databases/$(database)/documents/users/$(request.resource.data.voterId)).data.isLoggedIn == true &&
+        get(/databases/$(database)/documents/users/$(request.resource.data.voterId)).data.hasVoted != true &&
+        isVotingActive();
+      allow update, delete: if isAdmin();
+    }
+
+    match /devices/{deviceDocId} {
+      allow read: if isAdmin();
+      allow create: if
+        request.resource.data.deviceId is string &&
+        request.resource.data.used == true &&
+        request.resource.data.usedBy is string &&
+        request.resource.data.timestamp is timestamp &&
+        isVotingActive();
+      allow update, delete: if isAdmin();
+    }
+
     match /{document=**} {
-      allow read, write: if request.time < timestamp.date(2026, 10, 18);
+      allow read, write: if false;
     }
   }
 }
