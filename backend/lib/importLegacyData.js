@@ -27,7 +27,9 @@ export async function importLegacyData(data, connection) {
         if (!Array.isArray(data[key] || [])) throw new Error(`${key} must be an array.`);
         models[key] = connection.models[source.modelName] || connection.model(source.modelName, source.schema);
         await models[key].init();
-        if (await models[key].exists({})) throw new Error('Import requires an empty target database.');
+        if (await models[key].exists(key === 'users' ? { role: 'student' } : {})) {
+            throw new Error('Import requires an empty target database for election data; administrators may already exist.');
+        }
     }
     const rows = { users: [], positions: [], candidates: [], votes: [], settings: [] };
     for (const user of data.users || []) {
@@ -73,7 +75,9 @@ export async function importLegacyData(data, connection) {
     }
     await connection.transaction(async session => {
         for (const [key, model] of Object.entries(models)) {
-            if (await model.exists({}).session(session)) throw new Error('Target database is no longer empty.');
+            if (await model.exists(key === 'users' ? { role: 'student' } : {}).session(session)) {
+                throw new Error('Target election data is no longer empty.');
+            }
             if (rows[key].length) await model.insertMany(rows[key], { session });
         }
     });

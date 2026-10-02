@@ -6,4 +6,4 @@ Requires Node.js 22.12+, a MongoDB replica set, bcrypt, cors, dotenv, express, j
 
 From the repository root: `npm install`, configure `backend/.env`, run `npm run create-admin`, then `npm start` or `npm run dev`. `npm test` starts an isolated database for API integration checks.
 
-Routes live under `/api`: `/health`, `/auth`, `/users`, `/positions`, `/candidates`, `/votes`, `/settings`, `/announcements`. Administrator creation and offline migration use scripts, not public endpoints. See [MIGRATION.md](../MIGRATION.md).
+Routes live under `/api`: `/health`, `/auth`, `/users`, `/positions`, `/candidates`, `/votes`, `/settings`, `/announcements`. Administrator creation and offline migration use scripts, not public endpoints. Export Firebase election data with `npm run export-firestore --workspace backend -- C:/secure/focms-export.json`, then import it with `npm run import-firestore --workspace backend -- C:/secure/focms-export.json`. Keep the export outside the repository; it may contain plaintext legacy student passwords. See [MIGRATION.md](../MIGRATION.md) for the full migration and verification procedure.

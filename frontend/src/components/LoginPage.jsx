@@ -102,7 +102,7 @@ function LoginPage() {
     const password = formData.password;
 
     if (!id) {
-      setError(isStudentLogin ? 'Please enter your Student ID.' : 'Please enter your Admin ID.');
+      setError(isStudentLogin ? 'Please enter your Student ID.' : 'Please enter your admin email or ID.');
       return;
     }
     if (!password) {
@@ -218,7 +218,7 @@ function LoginPage() {
             <label className="text-sm font-medium text-gray-300 flex items-center pl-1">
               {isStudentLogin
                 ? <><Users className="h-4 w-4 mr-2 text-indigo-400" /> Student ID</>
-                : <><Shield className="h-4 w-4 mr-2 text-purple-400" /> Admin ID</>
+                : <><Shield className="h-4 w-4 mr-2 text-purple-400" /> Admin Email or ID</>
               }
             </label>
             <input
@@ -228,7 +228,7 @@ function LoginPage() {
               value={isStudentLogin ? formData.studentId : formData.adminId}
               onChange={handleChange}
               className="glass-input w-full"
-              placeholder={isStudentLogin ? 'Enter your student ID' : 'Enter your admin ID'}
+              placeholder={isStudentLogin ? 'Enter your student ID' : 'Enter your admin email or ID'}
               autoComplete="username"
               autoFocus
               required

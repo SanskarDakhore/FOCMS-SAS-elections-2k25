@@ -8,7 +8,13 @@
     "dev": "node --watch server.js",
     "test": "node --test tests/*.test.js",
     "create-admin": "node scripts/create-admin.js",
-    "import-firestore": "node scripts/import-firestore.js"
+    "export-firestore": "node scripts/export-firestore.js",
+    "import-firestore": "node scripts/import-firestore.js",
+    "export-admins": "node scripts/export-firebase-admins.js",
+    "import-admins": "node scripts/import-firebase-admins.js",
+    "mongodb:setup": "node scripts/setup-mongodb.js",
+    "mongodb:status": "node scripts/setup-mongodb.js status",
+    "mongodb:stop": "node scripts/setup-mongodb.js stop"
   },
   "dependencies": {
     "bcrypt": "^6.0.0",
