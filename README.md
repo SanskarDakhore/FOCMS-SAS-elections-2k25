@@ -1,146 +1,58 @@
-# 🗳️ Student Council Election Portal
+# FOCMS Election Portal
 
-A comprehensive web-based election system for student council elections with secure voting, device tracking, and real-time results.
+FOCMS / SAS student council election portal for BBA and MBA students. This project merges [Election-Portal-2k25](https://github.com/Tanmay2602B/Election-Portal-2k25) at `99228b3` into the existing FOCMS project, using the MongoDB/Express backend selected for this integration.
 
-## ✨ Features
+## Features
 
-### 👨‍💼 Admin Features
-- **Election Management**: Add/edit/delete positions and candidates
-- **Voting Schedule**: Set voting start and end times
-- **Student Data Management**: Upload students via Excel/CSV
-- **Real-time Results**: View vote counts per position
-- **Audit Logs**: Track who voted for whom
-- **Export Results**: Download results as Excel/CSV
+- Public landing page with election status, countdown, turnout, and announcements.
+- Student and admin sign-in using hashed passwords and expiring sessions.
+- Admin management of positions, candidates, candidate photos, students, schedules, results, and announcements.
+- FOCMS programs: BBA semesters 1, 3, 5; MBA semesters 1, 3.
+- CSV/Excel student import, program/semester search and filters, filtered registry export, password reset with downloadable new credentials, and selective vote reset.
+- One complete ballot per student, enforced atomically by MongoDB transactions, with server-side schedule and candidate validation. Results and individual voting records require admin access.
 
-### 🎓 Student Features
-- **Secure Login**: Student ID + password authentication
-- **Schedule-based Voting**: Can only vote during scheduled times
-- **Device Locking**: One device = one vote (prevents sharing)
-- **Session Control**: Prevents multiple logins of same account
-- **Mandatory Voting**: Must select ALL positions before submission
-- **Auto-logout**: Automatic logout after voting
+## Local setup
 
-### 🔒 Security Features
-- **Voting Schedule Enforcement**: Database-level time restrictions
-- **Device Fingerprinting**: Unique device identification
-- **Account Locking**: Prevents re-voting after submission
-- **Session Management**: Single active session per account
-- **Firestore Security Rules**: Database-level access control
+Requires Node.js 22.12 or later and MongoDB Atlas or a MongoDB replica set. A standalone MongoDB server cannot support atomic ballot submission.
 
-## 🚀 Quick Start
-
-### Prerequisites
-- Node.js (v18 or higher)
-- Firebase account
-- Modern web browser
-
-### Installation
-
-1. **Install dependencies**:
-   ```bash
-   npm install
-   ```
-
-2. **Set up Firebase**:
-   - Create a new Firebase project at [Firebase Console](https://console.firebase.google.com)
-   - Enable Authentication (Email/Password)
-   - Create Firestore database
-   - Copy your config and update `src/firebase.js`
-
-3. **Deploy Firestore security rules**:
-   ```bash
-   firebase deploy --only firestore:rules
-   ```
-
-4. **Start development server**:
-   ```bash
-   npm run dev
-   ```
-
-## 📋 Setup Guide
-
-### 1. Firebase Configuration
-Update `src/firebase.js` with your Firebase project credentials:
-
-```javascript
-const firebaseConfig = {
-  apiKey: "your-api-key",
-  authDomain: "your-project.firebaseapp.com",
-  projectId: "your-project-id",
-  storageBucket: "your-project.appspot.com",
-  messagingSenderId: "123456789",
-  appId: "your-app-id"
-};
+```powershell
+npm install
+if (!(Test-Path backend/.env)) { Copy-Item backend/.env.example backend/.env }
+if (!(Test-Path frontend/.env)) { Copy-Item frontend/.env.example frontend/.env }
+node -e "console.log(require('node:crypto').randomBytes(32).toString('hex'))"
 ```
 
-### 2. Create Admin Account
-In Firebase Authentication, manually create an admin account, then add to Firestore:
+Set `MONGODB_URI` to your FOCMS database and `JWT_SECRET` to the generated value in `backend/.env`. Use a dedicated empty database for a new election setup. This integration has already prepared an ignored local `backend/.env` with a random secret and a localhost database URI; edit it for your environment instead of overwriting it if it exists.
 
-**Collection**: `admins`
-**Document ID**: `[admin-uid-from-auth]`
-**Data**:
-```json
-{
-  "name": "Admin Name",
-  "email": "admin@school.edu",
-  "role": "admin",
-  "createdAt": "2024-01-01T00:00:00.000Z"
-}
+Create your administrator by setting `ADMIN_ID`, `ADMIN_PASSWORD` (at least 12 characters), and optionally `ADMIN_NAME` in `backend/.env`, then run:
+
+```powershell
+npm run create-admin
+npm run dev
 ```
 
-### 3. Upload Student Data
-Prepare an Excel/CSV file with columns:
-- `studentId`: Unique student identifier
-- `name`: Student full name
-- `class`: Student class/grade
-- `password`: Login password (optional, defaults to 'password123')
+Open `http://localhost:5173`. The frontend proxies `/api` to the backend on port 5000. Admin sign-in now uses an Admin ID rather than Firebase email authentication. Remove the admin bootstrap variables after creating the account.
 
-## 🗃️ Database Structure
+## Students
 
-```
-Firestore Collections:
-├── users/           # Student accounts
-├── admins/          # Admin accounts  
-├── positions/       # Election positions
-├── candidates/      # Candidates per position
-├── votes/           # Cast votes (anonymous)
-├── devices/         # Device tracking
-└── settings/        # Election configuration (voting schedule)
-```
+The import template is [frontend/public/student-template.csv](frontend/public/student-template.csv). Columns: `studentId,name,program,semester,class,password`. Numeric student IDs are converted to text. For FOCMS classes, use `BBA-Sem1`, `BBA-Sem3`, `BBA-Sem5`, `MBA-Sem1`, or `MBA-Sem3`.
 
-### Election Schedule Configuration
-The voting schedule is stored in `settings/electionConfig`:
-```json
-{
-  "votingStart": "2025-09-21T09:00:00Z",
-  "votingEnd": "2025-09-21T17:00:00Z",
-  "updatedAt": "2025-09-20T12:00:00Z"
-}
+Blank import passwords retain the previous portal's `password123` default. Set individual passwords in the import or use **Reset Passwords** to generate unique credentials. Stored passwords are hashed and cannot be exported; **Export Registry** and **Export Filtered** export student details, while **Reset Passwords** downloads the newly generated passwords once.
+
+## Migration and deployment
+
+See [MIGRATION.md](MIGRATION.md) before switching a live election. Existing Firebase data and Firebase admin accounts are not automatically copied to MongoDB. Original FOCMS Firebase settings and guides are preserved in [legacy/firebase](legacy/firebase/README.md), and the original Git remote is retained.
+
+For production, deploy this repository's backend and set `MONGODB_URI`, a random `JWT_SECRET`, and `ALLOWED_ORIGINS` to the exact FOCMS frontend URL. Build the frontend with `VITE_API_BASE_URL=https://YOUR-FOCMS-API/api`. No upstream API URL or database connection is used by default. Configure your own Cloudinary account and unsigned preset for optional photos via the frontend environment variables.
+
+The root `vercel.json` builds `frontend/dist`; `render.yaml` describes the backend service. Deploy with the repository root selected. Environment changes on the frontend require a rebuild.
+
+## Validation
+
+```powershell
+npm run build
+npm run lint
+npm test
 ```
 
-## 📅 Voting Schedule Features
-
-### Admin Schedule Management
-- Set specific start and end date/time for voting period
-- Real-time status monitoring (not started/active/ended)
-- Duration calculation and validation
-
-### Student Schedule Enforcement
-- **Before voting starts**: Students see "Voting has not started yet" message
-- **During voting period**: Full voting access with countdown timer
-- **After voting ends**: Students see "Voting has ended" message
-- **Database-level enforcement**: Security rules prevent out-of-schedule votes
-
-## 🔧 Tech Stack
-
-- **Frontend**: React.js + Vite
-- **Styling**: Tailwind CSS
-- **Backend**: Firebase (Auth + Firestore)
-- **Icons**: Lucide React
-- **File Processing**: XLSX, PapaParse
-
----
-
-**Made with ❤️ for democratic student elections**
-
-# Election-Portal-2k25
+API tests launch an isolated, temporary MongoDB replica set and remove it afterward. Install `mongod` on your PATH, or set `MONGOD_BINARY` to its executable path. Tests do not use `backend/.env` database settings or live election data.

@@ -1,0 +1,17 @@
+services:
+  - type: web
+    name: focms-sas-election-api
+    runtime: node
+    rootDir: .
+    buildCommand: npm ci --omit=dev --workspace backend
+    startCommand: npm start
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: MONGODB_URI
+        sync: false
+      - key: JWT_SECRET
+        sync: false
+      - key: ALLOWED_ORIGINS
+        sync: false
