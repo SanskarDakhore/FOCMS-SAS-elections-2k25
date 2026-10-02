@@ -1,0 +1,24 @@
+name: Render Backend Keep-Alive
+
+on:
+  schedule:
+    # Runs every 14 minutes (Render free tier spins down after 15 minutes of inactivity)
+    - cron: '*/14 * * * *'
+  workflow_dispatch:
+
+jobs:
+  keep-alive:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping Backend Health Endpoint
+        run: |
+          TARGET_URL="${{ secrets.RENDER_BACKEND_URL || 'https://focms-sas-election-api.onrender.com' }}"
+          ENDPOINT="${TARGET_URL%/}/api/health"
+          echo "Pinging health endpoint at: $ENDPOINT"
+          HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 30 "$ENDPOINT" || echo "000")
+          echo "Response HTTP Status: $HTTP_STATUS"
+          if [ "$HTTP_STATUS" -ge 200 ] && [ "$HTTP_STATUS" -lt 400 ]; then
+            echo "Render backend is awake and healthy."
+          else
+            echo "Ping completed with status $HTTP_STATUS (Backend is waking up or starting cold)."
+          fi

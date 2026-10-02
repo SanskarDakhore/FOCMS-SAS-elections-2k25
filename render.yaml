@@ -15,3 +15,7 @@ services:
         sync: false
       - key: ALLOWED_ORIGINS
         sync: false
+      - key: AUTO_PING_ENABLED
+        value: "true"
+      - key: PING_INTERVAL_MINUTES
+        value: "12"

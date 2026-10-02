@@ -19,7 +19,12 @@ app.use(cors({
     allowedHeaders: ['Content-Type', 'Authorization'],
 }));
 app.use(express.json({ limit: '1mb' }));
-app.get('/api/health', (req, res) => res.json({ status: 'ok', portal: 'FOCMS Election Portal' }));
+app.get('/api/health', (req, res) => res.json({
+    status: 'ok',
+    portal: 'FOCMS Election Portal',
+    uptime: Math.floor(process.uptime()),
+    timestamp: new Date().toISOString()
+}));
 app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/positions', positionRoutes);

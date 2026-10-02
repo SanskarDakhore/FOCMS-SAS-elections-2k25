@@ -47,6 +47,12 @@ For production, deploy this repository's backend and set `MONGODB_URI`, a random
 
 The root `vercel.json` builds `frontend/dist`; `render.yaml` describes the backend service. Deploy with the repository root selected. Environment changes on the frontend require a rebuild.
 
+## Render Keep-Alive / Auto Health Check
+
+To prevent the Render free-tier backend from spinning down after 15 minutes of inactivity:
+- **Internal Auto-Ping**: The backend automatically reads Render's `RENDER_EXTERNAL_URL` in production (or `AUTO_PING_URL` in `backend/.env`) and sends periodic health check requests to `/api/health` every 12 minutes.
+- **External Cron**: A GitHub Actions workflow (`.github/workflows/render-keepalive.yml`) pings the health endpoint every 14 minutes externally to keep the service warm 24/7.
+
 ## Validation
 
 ```powershell

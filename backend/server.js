@@ -2,6 +2,8 @@ import mongoose from 'mongoose';
 import { getJwtSecret } from './config.js';
 import app from './app.js';
 
+import { startKeepAlive } from './lib/keepAlive.js';
+
 try {
     getJwtSecret();
     if (!process.env.MONGODB_URI) throw new Error('Set MONGODB_URI in backend/.env.');
@@ -11,7 +13,10 @@ try {
         throw new Error('MongoDB must use a replica set or Atlas cluster for atomic vote submission.');
     }
     const port = process.env.PORT || 5000;
-    app.listen(port, () => console.log(`FOCMS Election Portal API listening on port ${port}`));
+    app.listen(port, () => {
+        console.log(`FOCMS Election Portal API listening on port ${port}`);
+        startKeepAlive();
+    });
 } catch (error) {
     console.error('FOCMS API startup failed:', error.message);
     await mongoose.disconnect();
