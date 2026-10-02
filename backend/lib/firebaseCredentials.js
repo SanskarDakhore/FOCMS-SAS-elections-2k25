@@ -4,11 +4,14 @@ import { promisify } from 'node:util';
 const deriveKey = promisify(scrypt);
 
 export function decodeBase64(value, label, allowEmpty = false) {
-    if (typeof value !== 'string' || (!value && !allowEmpty) ||
-        !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(value)) {
+    if (typeof value !== 'string' || (!value && !allowEmpty)) {
         throw new Error(`Invalid Firebase ${label}.`);
     }
-    return Buffer.from(value, 'base64');
+    const normalized = value.replace(/-/g, '+').replace(/_/g, '/');
+    if (!/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(normalized)) {
+        throw new Error(`Invalid Firebase ${label}.`);
+    }
+    return Buffer.from(normalized, 'base64');
 }
 
 export function validateFirebaseHashConfig(config) {

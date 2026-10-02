@@ -1,6 +1,6 @@
 # FOCMS Firebase to MongoDB migration
 
-The merge changes application code only. The existing `focms-sas-elections-2k25` Firebase project remains untouched. The original connection details, rules, and guides are archived under `legacy/firebase`; use the previous Git commit to run the Firebase version if needed.
+The migration to MongoDB is complete. The existing `focms-sas-elections-2k25` Firebase project remains untouched; refer to Git history to review historical Firebase rules if needed.
 
 1. Back up Firebase collections before switching the live site. Perform a rehearsal in a separate MongoDB database; keep the live voting site closed during the final migration.
 2. Provision a dedicated FOCMS MongoDB Atlas database or replica set. Configure `backend/.env` or hosting environment variables; never reuse the incoming repository's environment file or API service.

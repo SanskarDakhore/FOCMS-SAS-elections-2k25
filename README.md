@@ -41,7 +41,7 @@ Blank import passwords retain the previous portal's `password123` default. Set i
 
 ## Migration and deployment
 
-See [MIGRATION.md](MIGRATION.md) before switching a live election. Existing Firebase data and Firebase admin accounts are not automatically copied to MongoDB. Original FOCMS Firebase settings and guides are preserved in [legacy/firebase](legacy/firebase/README.md), and the original Git remote is retained.
+See [MIGRATION.md](MIGRATION.md) for details on the completed migration from Firebase to MongoDB. All election data and administrator accounts have been imported into MongoDB.
 
 For production, deploy this repository's backend and set `MONGODB_URI`, a random `JWT_SECRET`, and `ALLOWED_ORIGINS` to the exact FOCMS frontend URL. Build the frontend with `VITE_API_BASE_URL=https://YOUR-FOCMS-API/api`. No upstream API URL or database connection is used by default. Configure your own Cloudinary account and unsigned preset for optional photos via the frontend environment variables.
 
