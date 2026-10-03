@@ -2,7 +2,9 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import api from '../utils/api';
 import * as XLSX from 'xlsx';
+import { Menu } from 'lucide-react';
 import LoadingSpinner from './LoadingSpinner';
+import { getVotingStatus } from '../utils/votingSchedule';
 
 // New Modular Components
 import AdminSidebar from './admin/AdminSidebar';
@@ -16,6 +18,7 @@ import AdminModal from './admin/AdminModal';
 const AdminDashboard = () => {
   const { logout } = useAuth();
   const [activeTab, setActiveTab] = useState('overview');
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [loading, setLoading] = useState(true);
 
   // Data State
@@ -23,7 +26,9 @@ const AdminDashboard = () => {
   const [candidates, setCandidates] = useState([]);
   const [students, setStudents] = useState([]);
   const [votes, setVotes] = useState([]);
+  const [liveVoteStats, setLiveVoteStats] = useState(null);
   const [electionResults, setElectionResults] = useState([]); // pre-computed server-side results
+  const [votingBatch, setVotingBatch] = useState(null);
 
   // Schedule State
   const [votingSchedule, setVotingSchedule] = useState({
@@ -50,13 +55,15 @@ const AdminDashboard = () => {
   const loadData = async () => {
     setLoading(true);
     try {
-      const [scheduleRes, positionsRes, candidatesRes, usersRes, votesRes, resultsRes] = await Promise.allSettled([
+      const [scheduleRes, positionsRes, candidatesRes, usersRes, votesRes, resultsRes, voteStatsRes, batchRes] = await Promise.allSettled([
         api.get('/settings/votingSchedule'),
         api.get('/positions'),
         api.get('/candidates'),
         api.get('/users'),
         api.get('/votes'),
-        api.get('/votes/results') // server-side pre-computed results (no ID comparison needed)
+        api.get('/votes/results'), // server-side pre-computed results (no ID comparison needed)
+        api.get('/votes/stats'),
+        api.get('/votes/batch')
       ]);
 
       // 1. Schedule
@@ -83,6 +90,9 @@ const AdminDashboard = () => {
       if (resultsRes.status === 'fulfilled') setElectionResults(resultsRes.value.data);
       else console.error('Results fetch failed:', resultsRes.reason);
 
+      if (voteStatsRes.status === 'fulfilled') setLiveVoteStats(voteStatsRes.value.data);
+      if (batchRes.status === 'fulfilled') setVotingBatch(batchRes.value.data);
+
     } catch (error) {
       console.error("Error loading data:", error);
     } finally {
@@ -90,16 +100,75 @@ const AdminDashboard = () => {
     }
   };
 
+  const refreshVotingBatch = async () => {
+    const response = await api.get('/votes/batch');
+    const batch = response.data;
+    setVotingBatch(batch);
+    if (batch.roster?.length) {
+      const rosterById = new Map(batch.roster.map(student => [student.studentId, student]));
+      setStudents(current => current.map(student => {
+        const rosterStudent = rosterById.get(student.studentId);
+        return rosterStudent ? { ...student, hasVoted: rosterStudent.hasVoted } : student;
+      }));
+    }
+    return batch;
+  };
+
+  useEffect(() => {
+    const intervalId = setInterval(() => {
+      refreshVotingBatch().catch(() => {});
+    }, 5000);
+    return () => clearInterval(intervalId);
+  }, []);
+
+  const openVotingBatch = async (batch) => {
+    await api.post('/votes/batch', batch);
+    await refreshVotingBatch();
+  };
+
+  const closeVotingBatch = async () => {
+    await api.post('/votes/batch/close');
+    await refreshVotingBatch();
+  };
+
+  const votingStatus = getVotingStatus(votingSchedule);
+
+  useEffect(() => {
+    if (loading || votingStatus.status !== 'active') return undefined;
+
+    let cancelled = false;
+    const refreshLiveStats = async () => {
+      const statsRes = await api.get('/votes/stats').catch(() => null);
+      if (cancelled) return;
+      if (statsRes) setLiveVoteStats(statsRes.data);
+    };
+
+    refreshLiveStats();
+    const intervalId = setInterval(refreshLiveStats, 10000);
+    return () => {
+      cancelled = true;
+      clearInterval(intervalId);
+    };
+  }, [loading, votingStatus.status]);
+
+  useEffect(() => {
+    if (loading || !['ended', 'disabled'].includes(votingStatus.status)) return;
+
+    api.get('/votes/results')
+      .then(response => setElectionResults(response.data))
+      .catch(error => console.error('Final results refresh failed:', error));
+  }, [loading, votingStatus.status]);
+
   // --- Computed Stats ---
   const stats = useMemo(() => {
-    const totalStudents = students.length;
+    const totalStudents = liveVoteStats?.totalVoters ?? students.length;
     // Check hasVoted flag. If users API returns it.
-    const votedStudents = students.filter(s => s.hasVoted).length;
-    const totalVotes = votes.length;
-    const votingPercentage = totalStudents > 0 ? (votedStudents / totalStudents * 100).toFixed(1) : 0;
+    const votedStudents = liveVoteStats?.totalVoted ?? students.filter(s => s.hasVoted).length;
+    const totalVotes = liveVoteStats?.totalVotes ?? votes.length;
+    const votingPercentage = liveVoteStats?.turnoutPercentage ?? (totalStudents > 0 ? (votedStudents / totalStudents * 100).toFixed(1) : 0);
 
     return { totalStudents, votedStudents, totalVotes, votingPercentage };
-  }, [students, votes]);
+  }, [students, votes, liveVoteStats]);
 
   // --- Handlers: Auth ---
   const handleLogout = async () => {
@@ -344,9 +413,27 @@ const AdminDashboard = () => {
   // --- Render ---
   return (
     <div className="flex min-h-screen bg-[#0f172a] text-white font-sans">
-      <AdminSidebar activeTab={activeTab} setActiveTab={setActiveTab} onLogout={handleLogout} />
+      <AdminSidebar
+        activeTab={activeTab}
+        setActiveTab={setActiveTab}
+        onLogout={handleLogout}
+        isMobileOpen={mobileSidebarOpen}
+        onMobileClose={() => setMobileSidebarOpen(false)}
+      />
 
-      <main className="flex-1 ml-64 p-8 relative z-10">
+      <main className="flex-1 min-w-0 ml-0 p-4 pt-20 sm:p-8 sm:pt-20 md:ml-64 md:pt-8 relative z-10">
+        <div className="fixed inset-x-0 top-0 z-10 flex items-center gap-3 border-b border-white/10 bg-[#0f172a]/95 px-4 py-3 backdrop-blur md:hidden">
+          <button
+            type="button"
+            onClick={() => setMobileSidebarOpen(true)}
+            aria-label="Open navigation menu"
+            aria-expanded={mobileSidebarOpen}
+            className="rounded-lg p-2 text-gray-300 transition-colors hover:bg-white/10 hover:text-white"
+          >
+            <Menu size={22} />
+          </button>
+          <span className="font-semibold">FOCMS Admin Portal</span>
+        </div>
         {loading ? (
           <div className="flex h-full items-center justify-center">
             <LoadingSpinner message="Loading Dashboard..." />
@@ -360,6 +447,7 @@ const AdminDashboard = () => {
                 candidates={candidates}
                 students={students}
                 votingSchedule={votingSchedule}
+                votingStatus={votingStatus}
                 setModalType={setModalType}
                 setEditItem={setEditItem}
                 setShowModal={setShowModal}
@@ -393,6 +481,10 @@ const AdminDashboard = () => {
             {activeTab === 'schedule' && (
               <AdminSchedule
                 votingSchedule={votingSchedule}
+                students={students}
+                votingBatch={votingBatch}
+                onOpenVotingBatch={openVotingBatch}
+                onCloseVotingBatch={closeVotingBatch}
                 setVotingSchedule={setVotingSchedule}
                 handleSaveSchedule={handleSaveSchedule}
                 saving={saving}

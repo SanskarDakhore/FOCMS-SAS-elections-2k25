@@ -5,10 +5,19 @@ import User from '../models/User.js';
 import auth from '../middleware/auth.js';
 import { getJwtSecret } from '../config.js';
 import { verifyFirebasePassword } from '../lib/firebaseCredentials.js';
+import rateLimit from 'express-rate-limit';
 
 const router = express.Router();
+const loginRateLimit = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    limit: 10,
+    keyGenerator: req => String(req.body?.studentId || 'unknown').trim().toLowerCase(),
+    standardHeaders: 'draft-8',
+    legacyHeaders: false,
+    message: { message: 'Too many login attempts for this account. Try again in 15 minutes.' }
+});
 
-router.post('/login', async (req, res) => {
+router.post('/login', loginRateLimit, async (req, res) => {
     const { studentId, password } = req.body;
     if (typeof studentId !== 'string' || typeof password !== 'string' || !password) {
         return res.status(400).json({ message: 'Student ID and password are required' });

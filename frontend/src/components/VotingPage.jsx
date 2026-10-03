@@ -19,6 +19,7 @@ function VotingPage() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
   const [votingSettings, setVotingSettings] = useState(null);
+  const [batchStatus, setBatchStatus] = useState(null);
   const [departmentInfo, setDepartmentInfo] = useState(null);
   const [voteSubmitted, setVoteSubmitted] = useState(false);
   const [redirectCountdown, setRedirectCountdown] = useState(8);
@@ -51,16 +52,28 @@ function VotingPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  useEffect(() => {
+    if (!batchStatus || voteSubmitted) return undefined;
+    const intervalId = setInterval(() => {
+      api.get('/votes/batch/status')
+        .then(response => setBatchStatus(response.data))
+        .catch(() => {});
+    }, 5000);
+    return () => clearInterval(intervalId);
+  }, [batchStatus, voteSubmitted]);
+
   const loadElectionData = async () => {
     try {
-      const [scheduleRes, positionsRes, candidatesRes] = await Promise.all([
+      const [scheduleRes, positionsRes, candidatesRes, batchRes] = await Promise.all([
         api.get('/settings/votingSchedule'),
         api.get('/positions'),
-        api.get('/candidates')
+        api.get('/candidates'),
+        api.get('/votes/batch/status')
       ]);
 
       const settings = { ...scheduleRes.data };
       setVotingSettings(settings);
+      setBatchStatus(batchRes.data);
 
       const positionsData = positionsRes.data;
       let candidatesData = candidatesRes.data;
@@ -141,6 +154,38 @@ function VotingPage() {
           <AlertTriangle className="w-16 h-16 text-red-400 mx-auto mb-4" />
           <h2 className="text-2xl font-bold text-white mb-2">Voting Closed</h2>
           <p className="text-red-200">The election is currently not active. Return to the dashboard.</p>
+          <Button onClick={handleGoBack} className="mt-6 w-full py-3">Return to Dashboard</Button>
+        </Card>
+      </div>
+    );
+  }
+
+  if (!voteSubmitted && batchStatus && !batchStatus.allowed) {
+    const isCooldown = batchStatus.status === 'cooldown' &&
+      new Date(batchStatus.cooldownUntil).getTime() > Date.now();
+    const isCooldownComplete = batchStatus.status === 'cooldown' && !isCooldown;
+    const isAnotherClassActive = batchStatus.status === 'open';
+    return (
+      <div className="min-h-screen bg-[#0f172a] flex items-center justify-center p-4">
+        <Card className="max-w-md w-full text-center p-8 border-amber-500/30 bg-amber-500/10">
+          <Users className="w-14 h-14 text-amber-300 mx-auto mb-4" />
+          <h2 className="text-2xl font-bold text-white mb-2">
+            {isCooldown ? 'Batch Cooldown' : isCooldownComplete ? 'Waiting for Next Batch' : isAnotherClassActive ? 'Your Class Is Not Open Yet' : 'Voting Batch Not Open'}
+          </h2>
+          <p className="text-amber-100">
+            {isCooldown
+              ? 'The two-minute cooldown is in progress. Your administrator will open the next voter batch.'
+              : isCooldownComplete
+                ? 'The cooldown is complete. Your administrator will open the next voter batch.'
+              : isAnotherClassActive
+                ? `${batchStatus.className} is currently voting. Your administrator will open your class batch next.`
+                : 'Your administrator has not opened a voting batch for your class yet.'}
+          </p>
+          {batchStatus.cooldownUntil && isCooldown && (
+            <p className="mt-3 text-sm text-amber-200">
+              Next batch available after {new Date(batchStatus.cooldownUntil).toLocaleTimeString()}
+            </p>
+          )}
           <Button onClick={handleGoBack} className="mt-6 w-full py-3">Return to Dashboard</Button>
         </Card>
       </div>

@@ -1,7 +1,7 @@
 import React from 'react';
-import { LayoutDashboard, Users, Calendar, BarChart3, LogOut, Megaphone } from 'lucide-react';
+import { LayoutDashboard, Users, Calendar, BarChart3, LogOut, Megaphone, X } from 'lucide-react';
 
-const AdminSidebar = ({ activeTab, setActiveTab, onLogout }) => {
+const AdminSidebar = ({ activeTab, setActiveTab, onLogout, isMobileOpen, onMobileClose }) => {
     const menuItems = [
         { id: 'overview', label: 'Overview', icon: LayoutDashboard },
         { id: 'manage', label: 'Manage Election', icon: Users },
@@ -11,12 +11,33 @@ const AdminSidebar = ({ activeTab, setActiveTab, onLogout }) => {
     ];
 
     return (
-        <div className="glass-panel w-64 h-screen fixed left-0 top-0 flex flex-col border-r border-white/10 z-20">
+        <>
+            {isMobileOpen && (
+                <button
+                    type="button"
+                    aria-label="Close navigation menu"
+                    onClick={onMobileClose}
+                    className="fixed inset-0 z-20 bg-black/60 md:hidden"
+                />
+            )}
+        <aside className={`glass-panel w-64 h-screen fixed left-0 top-0 flex flex-col border-r border-white/10 z-30 transition-transform duration-300 md:translate-x-0 ${isMobileOpen ? 'translate-x-0' : '-translate-x-full'}`}>
             <div className="p-6">
-                <h1 className="text-2xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-indigo-400 to-purple-400">
-                    FOCMS Admin Portal
-                </h1>
-                <p className="text-gray-400 text-xs mt-1">Election Management System</p>
+                <div className="flex items-start justify-between gap-2">
+                    <div>
+                        <h1 className="text-2xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-indigo-400 to-purple-400">
+                            FOCMS Admin Portal
+                        </h1>
+                        <p className="text-gray-400 text-xs mt-1">Election Management System</p>
+                    </div>
+                    <button
+                        type="button"
+                        onClick={onMobileClose}
+                        aria-label="Close navigation menu"
+                        className="rounded-lg p-2 text-gray-400 hover:bg-white/10 hover:text-white md:hidden"
+                    >
+                        <X size={20} />
+                    </button>
+                </div>
             </div>
 
             <nav className="flex-1 px-4 space-y-2">
@@ -27,7 +48,10 @@ const AdminSidebar = ({ activeTab, setActiveTab, onLogout }) => {
                     return (
                         <button
                             key={item.id}
-                            onClick={() => setActiveTab(item.id)}
+                            onClick={() => {
+                                setActiveTab(item.id);
+                                onMobileClose();
+                            }}
                             className={`
                 w-full flex items-center space-x-3 px-4 py-3 rounded-xl transition-all duration-300
                 ${isActive
@@ -55,7 +79,8 @@ const AdminSidebar = ({ activeTab, setActiveTab, onLogout }) => {
                     <span className="font-medium">Logout</span>
                 </button>
             </div>
-        </div>
+        </aside>
+        </>
     );
 };
 

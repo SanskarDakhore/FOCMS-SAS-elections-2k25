@@ -14,6 +14,7 @@ import Position from '../models/Position.js';
 import Candidate from '../models/Candidate.js';
 import Vote from '../models/Vote.js';
 import Setting from '../models/Settings.js';
+import VotingBatch from '../models/VotingBatch.js';
 import { importLegacyData } from '../lib/importLegacyData.js';
 
 let mongo;
@@ -22,6 +23,9 @@ let server;
 let base;
 let adminToken;
 let studentToken;
+let secondStudentToken;
+let thirdStudentToken;
+let excludedStudentToken;
 let ballot;
 let initialSchedule;
 
@@ -64,7 +68,7 @@ before(async () => {
         members: [{ _id: 0, host: `127.0.0.1:${port}` }] } });
     await control.close();
     await mongoose.connect(uri + '?replicaSet=focms-test-rs', { serverSelectionTimeoutMS: 30000 });
-    await Promise.all([User.init(), Vote.init(), Position.init(), Candidate.init(), Setting.init()]);
+    await Promise.all([User.init(), Vote.init(), Position.init(), Candidate.init(), Setting.init(), VotingBatch.init()]);
     process.env.JWT_SECRET = 'focms-integration-tests-use-an-isolated-secret';
     const { default: app } = await import('../app.js');
     server = app.listen(0, '127.0.0.1');
@@ -74,6 +78,9 @@ before(async () => {
     await User.create([
         { studentId: 'focms-test-admin', name: 'Test Admin', role: 'admin', password },
         { studentId: 'BBA101', name: 'Test Student', role: 'student', password, program: 'BBA', semester: '1', class: 'BBA-Sem1' },
+        { studentId: 'BBA102', name: 'Second Student', role: 'student', password, program: 'BBA', semester: '1', class: 'BBA-Sem1' },
+        { studentId: 'BBA103', name: 'Third Student', role: 'student', password, program: 'BBA', semester: '1', class: 'BBA-Sem1' },
+        { studentId: 'BBA104', name: 'Unassigned Student', role: 'student', password, program: 'BBA', semester: '1', class: 'BBA-Sem1' },
     ]);
     const positions = await Position.create([{ name: 'President' }, { name: 'Secretary' }]);
     const candidates = await Candidate.create(positions.map(position => ({ name: position.name + ' Candidate',
@@ -84,8 +91,14 @@ before(async () => {
     await Setting.create({ key: 'votingSchedule', value: initialSchedule });
     adminToken = (await request('POST', '/auth/login', { studentId: 'focms-test-admin', password: 'integration-password' })).body.token;
     studentToken = (await request('POST', '/auth/login', { studentId: 'BBA101', password: 'integration-password' })).body.token;
+    secondStudentToken = (await request('POST', '/auth/login', { studentId: 'BBA102', password: 'integration-password' })).body.token;
+    thirdStudentToken = (await request('POST', '/auth/login', { studentId: 'BBA103', password: 'integration-password' })).body.token;
+    excludedStudentToken = (await request('POST', '/auth/login', { studentId: 'BBA104', password: 'integration-password' })).body.token;
     assert.ok(adminToken);
     assert.ok(studentToken);
+    assert.equal((await request('POST', '/votes/batch', {
+        className: 'BBA-Sem1', studentIds: ['BBA101', 'BBA102', 'BBA103']
+    }, adminToken)).status, 200);
 }, { timeout: 60000 });
 
 after(async () => {
@@ -113,6 +126,38 @@ test('FOCMS health, protected results, no public seed admin, and invalid JWT rej
     assert.equal((await request('GET', '/users', undefined, forged)).status, 401);
     const staleRole = jwt.sign({ user: { id: 'BBA101', role: 'admin' } }, process.env.JWT_SECRET);
     assert.equal((await request('GET', '/users', undefined, staleRole)).status, 403);
+});
+
+test('CORS allows this project Vercel preview origin but rejects unrelated preview origins', async () => {
+    const previewOrigin = 'https://focms-sas-elections-2k25-pffdfo4cy-sanskar-dakhores-projects.vercel.app';
+    const preflight = await fetch(`${base}/settings/votingSchedule`, {
+        method: 'OPTIONS',
+        headers: {
+            Origin: previewOrigin,
+            'Access-Control-Request-Method': 'GET',
+            'Access-Control-Request-Headers': 'authorization'
+        }
+    });
+    assert.equal(preflight.status, 204);
+    assert.equal(preflight.headers.get('access-control-allow-origin'), previewOrigin);
+
+    const unrelated = await fetch(`${base}/settings/votingSchedule`, {
+        method: 'OPTIONS',
+        headers: {
+            Origin: 'https://unrelated-app.vercel.app',
+            'Access-Control-Request-Method': 'GET'
+        }
+    });
+    assert.equal(unrelated.headers.get('access-control-allow-origin'), null);
+
+    const spoofedProjectPrefix = await fetch(`${base}/settings/votingSchedule`, {
+        method: 'OPTIONS',
+        headers: {
+            Origin: 'https://focms-sas-elections-2k25-untrusted.vercel.app',
+            'Access-Control-Request-Method': 'GET'
+        }
+    });
+    assert.equal(spoofedProjectPrefix.headers.get('access-control-allow-origin'), null);
 });
 
 test('FOCMS BBA/MBA fields survive student create and edit; hashes are never returned', async () => {
@@ -166,6 +211,39 @@ test('concurrent submissions record one complete ballot, admin results count it,
     assert.equal((await request('DELETE', '/users/BBA101/votes', undefined, adminToken)).status, 200);
     assert.equal(await Vote.countDocuments({ userId: 'BBA101' }), 0);
     assert.equal((await request('POST', '/votes', ballot, studentToken)).status, 200);
+});
+
+test('class batches enforce capacity and cooldown, then admit missed unvoted students', async () => {
+    assert.equal((await request('POST', '/votes', ballot, excludedStudentToken)).status, 403);
+
+    await VotingBatch.updateOne({ _id: 'current' }, { $set: { activeSubmissions: 100 } });
+    const full = await request('POST', '/votes', ballot, thirdStudentToken);
+    assert.equal(full.status, 429);
+    assert.equal(full.headers.get('retry-after'), '1');
+    await VotingBatch.updateOne({ _id: 'current' }, { $set: { activeSubmissions: 0 } });
+
+    const closed = await request('POST', '/votes/batch/close', {}, adminToken);
+    assert.equal(closed.status, 200);
+    assert.ok(new Date(closed.body.cooldownUntil).getTime() > Date.now());
+    assert.equal((await request('POST', '/votes/batch', {
+        className: 'BBA-Sem1', studentIds: ['BBA102', 'BBA103']
+    }, adminToken)).status, 429);
+
+    await VotingBatch.updateOne({ _id: 'current' }, { $set: { cooldownUntil: new Date(Date.now() - 1) } });
+    assert.equal((await request('POST', '/votes/batch', {
+        className: 'BBA-Sem1', studentIds: ['BBA102', 'BBA103']
+    }, adminToken)).status, 200);
+    assert.equal((await request('GET', '/votes/batch/status', undefined, secondStudentToken)).body.allowed, true);
+    assert.equal((await request('GET', '/votes/batch/status', undefined, excludedStudentToken)).body.allowed, false);
+
+    const submissions = await Promise.all([
+        request('POST', '/votes', ballot, secondStudentToken),
+        request('POST', '/votes', ballot, thirdStudentToken)
+    ]);
+    assert.deepEqual(submissions.map(response => response.status), [200, 200]);
+    const batch = await request('GET', '/votes/batch', undefined, adminToken);
+    assert.equal(batch.body.status, 'cooldown');
+    assert.equal(batch.body.remainingCount, 0);
 });
 
 test('bulk reset issues usable new credentials; bulk delete preserves admin accounts', async () => {

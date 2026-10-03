@@ -40,6 +40,7 @@ const AdminOverview = ({
     positions,
     candidates,
     votingSchedule,
+    votingStatus,
     setModalType,
     setEditItem,
     setShowModal,
@@ -48,6 +49,8 @@ const AdminOverview = ({
     setActiveTab
 }) => {
     const animatedTotalVotes = useAnimatedCounter(stats.totalVotes || 0);
+    const isVotingActive = votingStatus.status === 'active';
+    const votingHasClosed = ['ended', 'disabled'].includes(votingStatus.status);
 
     return (
         <div className="space-y-8 animate-fade-in">
@@ -71,14 +74,30 @@ const AdminOverview = ({
                     <div className="absolute -right-6 -top-6 text-indigo-500/10 group-hover:text-indigo-500/20 transition-colors">
                         <Vote size={120} />
                     </div>
-                    <h3 className="text-gray-400 font-medium mb-1">Total Votes Cast</h3>
+                    <h3 className="text-gray-400 font-medium mb-1">
+                        {isVotingActive ? 'Live Vote Castings' : votingHasClosed ? 'Past Vote Castings' : 'Total Votes Cast'}
+                    </h3>
                     <div className="flex items-baseline gap-2 mb-4">
                         <span className="text-5xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 to-purple-400">
                             {animatedTotalVotes}
                         </span>
-                        <span className="text-indigo-300 font-medium text-sm flex items-center gap-1">
-                            <Activity size={14} className="animate-pulse" /> Live
-                        </span>
+                        {isVotingActive ? (
+                            <span className="text-indigo-300 font-medium text-sm flex items-center gap-1">
+                                <Activity size={14} className="animate-pulse" /> Live
+                            </span>
+                        ) : votingHasClosed ? (
+                            <button
+                                type="button"
+                                onClick={() => setActiveTab('results')}
+                                className="flex items-center gap-1 rounded-md px-2 py-1 text-sm font-medium text-emerald-300 transition-colors hover:bg-emerald-400/10"
+                            >
+                                <BarChart3 size={14} /> View past results
+                            </button>
+                        ) : (
+                            <span className="text-gray-400 font-medium text-sm">
+                                {votingStatus.status === 'not_started' ? 'Scheduled' : 'Not scheduled'}
+                            </span>
+                        )}
                     </div>
                 </Card>
 

@@ -1,5 +1,5 @@
 import React from 'react';
-import { Calendar, Clock, CheckCircle, AlertCircle, RefreshCw, AlertTriangle, Info } from 'lucide-react';
+import { Calendar, Clock, CheckCircle, AlertCircle, RefreshCw, AlertTriangle, Info, Users, Play, Pause } from 'lucide-react';
 import Button from '../ui/Button';
 import Card from '../ui/Card';
 import LiveClock from '../LiveClock';
@@ -19,6 +19,10 @@ const toLocalInput = (isoStr) => {
 
 const AdminSchedule = ({
     votingSchedule,
+    students,
+    votingBatch,
+    onOpenVotingBatch,
+    onCloseVotingBatch,
     setVotingSchedule,
     handleSaveSchedule,
     saving,
@@ -28,6 +32,18 @@ const AdminSchedule = ({
     handleEndVoting,
     loadData
 }) => {
+    const [selectedClass, setSelectedClass] = React.useState('');
+    const [selectedStudentIds, setSelectedStudentIds] = React.useState([]);
+    const [batchBusy, setBatchBusy] = React.useState(false);
+    const [batchError, setBatchError] = React.useState('');
+    const [clockNow, setClockNow] = React.useState(Date.now());
+
+    React.useEffect(() => {
+        if (votingBatch?.status !== 'cooldown') return undefined;
+        const intervalId = setInterval(() => setClockNow(Date.now()), 1000);
+        return () => clearInterval(intervalId);
+    }, [votingBatch?.status, votingBatch?.cooldownUntil]);
+
     const start = votingSchedule.votingStart ? new Date(votingSchedule.votingStart) : null;
     const end = votingSchedule.votingEnd ? new Date(votingSchedule.votingEnd) : null;
     const now = new Date();
@@ -49,6 +65,37 @@ const AdminSchedule = ({
 
     // Detect local timezone abbreviation
     const tzName = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    const pendingStudents = students.filter(student => !student.hasVoted && student.class);
+    const availableClasses = [...new Set(pendingStudents.map(student => student.class))].sort();
+    const classStudents = pendingStudents.filter(student => student.class === selectedClass);
+    const cooldownSeconds = votingBatch?.cooldownUntil
+        ? Math.max(0, Math.ceil((new Date(votingBatch.cooldownUntil).getTime() - clockNow) / 1000))
+        : 0;
+
+    const handleOpenBatch = async () => {
+        setBatchBusy(true);
+        setBatchError('');
+        try {
+            await onOpenVotingBatch({ className: selectedClass, studentIds: selectedStudentIds });
+            setSelectedStudentIds([]);
+        } catch (error) {
+            setBatchError(error.response?.data?.msg || 'Unable to open the class batch.');
+        } finally {
+            setBatchBusy(false);
+        }
+    };
+
+    const handleCloseBatch = async () => {
+        setBatchBusy(true);
+        setBatchError('');
+        try {
+            await onCloseVotingBatch();
+        } catch (error) {
+            setBatchError(error.response?.data?.msg || 'Unable to close the class batch.');
+        } finally {
+            setBatchBusy(false);
+        }
+    };
 
     return (
         <div className="space-y-6 animate-fade-in">
@@ -265,6 +312,109 @@ const AdminSchedule = ({
                         <p className="mt-4 text-xs text-gray-500 text-center">
                             These buttons immediately open/close voting for all students regardless of schedule.
                         </p>
+                    </Card>
+
+                    <Card>
+                        <h3 className="text-lg font-bold text-white mb-2 flex items-center gap-2">
+                            <Users className="text-indigo-400" size={19} /> Class Voting Batch
+                        </h3>
+                        <p className="text-sm text-gray-400 mb-4">Up to 100 ballot submissions are processed simultaneously.</p>
+
+                        {votingBatch?.status === 'open' ? (
+                            <div className="space-y-4">
+                                <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/10 p-4">
+                                    <p className="font-semibold text-emerald-300">{votingBatch.className} is voting</p>
+                                    <p className="mt-1 text-sm text-gray-300">
+                                        {votingBatch.roster?.filter(student => student.hasVoted).length || 0} of {votingBatch.roster?.length || 0} voters completed
+                                    </p>
+                                    <p className="mt-1 text-xs text-gray-400">
+                                        {votingBatch.activeSubmissions || 0} ballot submissions processing
+                                    </p>
+                                </div>
+                                <Button
+                                    onClick={handleCloseBatch}
+                                    disabled={batchBusy || votingBatch.activeSubmissions > 0}
+                                    variant="danger"
+                                    icon={Pause}
+                                    className="w-full justify-center"
+                                >
+                                    {batchBusy ? 'Closing...' : 'Close Batch and Start Cooldown'}
+                                </Button>
+                                {votingBatch.activeSubmissions > 0 && (
+                                    <p className="text-xs text-gray-500">Wait for in-progress ballots to finish before closing.</p>
+                                )}
+                            </div>
+                        ) : (
+                            <div className="space-y-4">
+                                {votingBatch?.status === 'cooldown' && (
+                                    <div className="rounded-xl border border-amber-500/20 bg-amber-500/10 p-4 text-sm text-amber-200">
+                                        {cooldownSeconds > 0
+                                            ? `Next batch can open in ${Math.floor(cooldownSeconds / 60)}:${String(cooldownSeconds % 60).padStart(2, '0')}`
+                                            : 'Cooldown complete. Select the next voter batch.'}
+                                    </div>
+                                )}
+                                <label className="block text-sm font-medium text-gray-300">
+                                    Class
+                                    <select
+                                        value={selectedClass}
+                                        onChange={event => {
+                                            const nextClass = event.target.value;
+                                            setSelectedClass(nextClass);
+                                            setSelectedStudentIds(pendingStudents.filter(student => student.class === nextClass)
+                                                .map(student => student.studentId));
+                                            setBatchError('');
+                                        }}
+                                        className="glass-input mt-2 w-full rounded-lg px-3 py-2"
+                                    >
+                                        <option value="">Select class</option>
+                                        {availableClasses.map(className => <option key={className} value={className}>{className}</option>)}
+                                    </select>
+                                </label>
+
+                                {selectedClass && (
+                                    <div>
+                                        <div className="mb-2 flex items-center justify-between text-xs text-gray-400">
+                                            <span>{selectedStudentIds.length} of {classStudents.length} unvoted students selected</span>
+                                            <button
+                                                type="button"
+                                                onClick={() => setSelectedStudentIds(classStudents.map(student => student.studentId))}
+                                                className="text-indigo-300 hover:text-indigo-200"
+                                            >Select all</button>
+                                        </div>
+                                        <div className="max-h-52 space-y-1 overflow-y-auto rounded-lg border border-white/10 p-2">
+                                            {classStudents.map(student => (
+                                                <label key={student.studentId} className="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-sm text-gray-300 hover:bg-white/5">
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={selectedStudentIds.includes(student.studentId)}
+                                                        onChange={event => setSelectedStudentIds(current => event.target.checked
+                                                            ? [...current, student.studentId]
+                                                            : current.filter(id => id !== student.studentId))}
+                                                        className="h-4 w-4 rounded border-gray-600 bg-gray-700 text-indigo-500"
+                                                    />
+                                                    <span>{student.name}</span>
+                                                    <span className="ml-auto text-xs text-gray-500">{student.studentId}</span>
+                                                </label>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
+
+                                {batchError && <p role="alert" className="text-sm text-red-300">{batchError}</p>}
+                                <Button
+                                    onClick={handleOpenBatch}
+                                    disabled={batchBusy || !votingSchedule.isActive || !selectedClass || selectedStudentIds.length === 0 || cooldownSeconds > 0}
+                                    variant="success"
+                                    icon={Play}
+                                    className="w-full justify-center"
+                                >
+                                    {batchBusy ? 'Opening...' : `Open Batch${selectedStudentIds.length ? ` (${selectedStudentIds.length})` : ''}`}
+                                </Button>
+                                {!votingSchedule.isActive && (
+                                    <p className="text-xs text-gray-500">Start voting in the election status panel before opening a batch.</p>
+                                )}
+                            </div>
+                        )}
                     </Card>
                 </div>
             </div>
