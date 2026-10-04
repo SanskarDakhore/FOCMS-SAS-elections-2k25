@@ -12,15 +12,19 @@ import rateLimit from 'express-rate-limit';
 
 const app = express();
 app.set('trust proxy', 1);
-const allowedOrigins = new Set((process.env.ALLOWED_ORIGINS || '').split(',').map(origin => origin.trim()).filter(Boolean));
+const allowedOrigins = (process.env.ALLOWED_ORIGINS || '').split(',').map(origin => origin.trim()).filter(Boolean);
+
+const originMatches = (origin) => {
+    if (!origin) return true;
+    return allowedOrigins.some(pattern => {
+        if (pattern === origin) return true;
+        const escaped = pattern.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\\\*/g, '.*');
+        return new RegExp(`^${escaped}$`, 'i').test(origin);
+    });
+};
 
 app.use(cors({
-    origin: (origin, callback) => {
-        if (!origin || allowedOrigins.has(origin)) {
-            return callback(null, true);
-        }
-        return callback(null, false);
-    },
+    origin: (origin, callback) => callback(null, originMatches(origin)),
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization'],
 }));
