@@ -158,6 +158,18 @@ test('CORS allows configured env origins and rejects unrelated domains', async (
     assert.equal(wildcardPreflight.status, 204);
     assert.equal(wildcardPreflight.headers.get('access-control-allow-origin'), wildcardOrigin);
 
+    // Test trailing slash and quotes handling
+    process.env.ALLOWED_ORIGINS = '"https://trailing-slash.example.com/", https://quoted.example.com/';
+    const trailingSlashPreflight = await fetch(`${base}/settings/votingSchedule`, {
+        method: 'OPTIONS',
+        headers: {
+            Origin: 'https://trailing-slash.example.com',
+            'Access-Control-Request-Method': 'GET'
+        }
+    });
+    assert.equal(trailingSlashPreflight.status, 204);
+    assert.equal(trailingSlashPreflight.headers.get('access-control-allow-origin'), 'https://trailing-slash.example.com');
+
     process.env.ALLOWED_ORIGINS = 'http://localhost:5173,http://127.0.0.1:5173,https://app.example.com,https://preview.example.com';
 
     const unrelated = await fetch(`${base}/settings/votingSchedule`, {

@@ -12,23 +12,87 @@ import rateLimit from 'express-rate-limit';
 
 const app = express();
 app.set('trust proxy', 1);
-const getAllowedOrigins = () => (process.env.ALLOWED_ORIGINS || '').split(',').map(origin => origin.trim()).filter(Boolean);
+const DEFAULT_ALLOWED_ORIGINS = [
+    'http://localhost:5173',
+    'http://127.0.0.1:5173',
+    'http://localhost:3000',
+    'http://127.0.0.1:3000',
+    'http://localhost:4173',
+    'http://127.0.0.1:4173',
+    'https://focms-sas-elections-2k25.vercel.app',
+    'https://focms-sas-elections-2k25*.vercel.app',
+    'https://focms-sas-elections-2k25-*.vercel.app',
+];
+
+const cleanOriginString = (val) => {
+    if (!val || typeof val !== 'string') return '';
+    let cleaned = val.trim().replace(/^['"`]|['"`]$/g, '');
+    cleaned = cleaned.replace(/\/+$/, '');
+    if ((cleaned.startsWith('http://') || cleaned.startsWith('https://')) && !cleaned.includes('*')) {
+        try {
+            const parsed = new URL(cleaned);
+            cleaned = parsed.origin;
+        } catch {
+            // keep as is
+        }
+    }
+    return cleaned.toLowerCase();
+};
+
+const getAllowedOrigins = () => {
+    const rawEnv = [
+        process.env.ALLOWED_ORIGINS,
+        process.env.ALLOWED_ORIGIN,
+        process.env.ALLOWED_URLS,
+        process.env.ALLOWED_URL,
+        process.env.CORS_ORIGIN,
+        process.env.FRONTEND_URL,
+        process.env.CLIENT_URL,
+    ].filter(Boolean).join(',');
+
+    const configured = rawEnv
+        .split(/[,;\s]+/)
+        .map(cleanOriginString)
+        .filter(Boolean);
+
+    return Array.from(new Set([...DEFAULT_ALLOWED_ORIGINS.map(cleanOriginString), ...configured]));
+};
 
 const originMatches = (origin) => {
     if (!origin) return true;
+    const cleanOrigin = cleanOriginString(origin);
     const allowedOrigins = getAllowedOrigins();
+
     return allowedOrigins.some(pattern => {
-        if (pattern === origin) return true;
+        if (pattern === '*' || pattern === cleanOrigin) return true;
+
+        if (!pattern.startsWith('http://') && !pattern.startsWith('https://')) {
+            if (`https://${pattern}` === cleanOrigin || `http://${pattern}` === cleanOrigin) {
+                return true;
+            }
+        }
+
         const escaped = pattern.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*');
-        return new RegExp(`^${escaped}$`, 'i').test(origin);
+        if (new RegExp(`^${escaped}$`, 'i').test(cleanOrigin)) return true;
+
+        if (!pattern.startsWith('http://') && !pattern.startsWith('https://')) {
+            const escapedWithProto = `https?:\\/\\/${escaped}`;
+            if (new RegExp(`^${escapedWithProto}$`, 'i').test(cleanOrigin)) return true;
+        }
+
+        return false;
     });
 };
 
-app.use(cors({
+const corsOptions = {
     origin: (origin, callback) => callback(null, originMatches(origin)),
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization'],
-}));
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin'],
+    credentials: true,
+    optionsSuccessStatus: 204,
+};
+
+app.use(cors(corsOptions));
 app.use('/api', rateLimit({
     windowMs: 60 * 1000,
     limit: 1200,
