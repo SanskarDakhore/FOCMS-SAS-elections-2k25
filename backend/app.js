@@ -12,18 +12,6 @@ import rateLimit from 'express-rate-limit';
 
 const app = express();
 app.set('trust proxy', 1);
-const DEFAULT_ALLOWED_ORIGINS = [
-    'http://localhost:5173',
-    'http://127.0.0.1:5173',
-    'http://localhost:3000',
-    'http://127.0.0.1:3000',
-    'http://localhost:4173',
-    'http://127.0.0.1:4173',
-    'https://focms-sas-elections-2k25.vercel.app',
-    'https://focms-sas-elections-2k25*.vercel.app',
-    'https://focms-sas-elections-2k25-*.vercel.app',
-];
-
 const cleanOriginString = (val) => {
     if (!val || typeof val !== 'string') return '';
     let cleaned = val.trim().replace(/^['"`]|['"`]$/g, '');
@@ -50,12 +38,12 @@ const getAllowedOrigins = () => {
         process.env.CLIENT_URL,
     ].filter(Boolean).join(',');
 
-    const configured = rawEnv
-        .split(/[,;\s]+/)
-        .map(cleanOriginString)
-        .filter(Boolean);
-
-    return Array.from(new Set([...DEFAULT_ALLOWED_ORIGINS.map(cleanOriginString), ...configured]));
+    return Array.from(new Set(
+        rawEnv
+            .split(/[,;\s]+/)
+            .map(cleanOriginString)
+            .filter(Boolean)
+    ));
 };
 
 const originMatches = (origin) => {

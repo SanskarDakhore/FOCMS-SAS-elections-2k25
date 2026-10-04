@@ -180,6 +180,16 @@ test('CORS allows configured env origins and rejects unrelated domains', async (
         }
     });
     assert.equal(unrelated.headers.get('access-control-allow-origin'), null);
+
+    delete process.env.ALLOWED_ORIGINS;
+    const noEnvPreflight = await fetch(`${base}/settings/votingSchedule`, {
+        method: 'OPTIONS',
+        headers: {
+            Origin: 'https://any-domain.com',
+            'Access-Control-Request-Method': 'GET'
+        }
+    });
+    assert.equal(noEnvPreflight.headers.get('access-control-allow-origin'), null);
 });
 
 test('FOCMS BBA/MBA fields survive student create and edit; hashes are never returned', async () => {

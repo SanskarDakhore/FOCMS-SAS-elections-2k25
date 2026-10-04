@@ -14,7 +14,7 @@ services:
       - key: JWT_SECRET
         sync: false
       - key: ALLOWED_ORIGINS
-        value: "http://localhost:5173,http://127.0.0.1:5173,https://focms-sas-elections-2k25.vercel.app,https://focms-sas-elections-2k25*.vercel.app"
+        sync: false
       - key: AUTO_PING_ENABLED
         value: "true"
       - key: PING_INTERVAL_MINUTES
