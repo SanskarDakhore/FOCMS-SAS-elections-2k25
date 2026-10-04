@@ -145,6 +145,21 @@ test('CORS allows configured env origins and rejects unrelated domains', async (
         assert.equal(preflight.headers.get('access-control-allow-origin'), origin);
     }
 
+    const wildcardOrigin = 'https://focms-sas-elections-2k25-git-main-country.vercel.app';
+    process.env.ALLOWED_ORIGINS = 'http://localhost:5173,http://127.0.0.1:5173,https://focms-sas-elections-2k25*.vercel.app';
+    const wildcardPreflight = await fetch(`${base}/settings/votingSchedule`, {
+        method: 'OPTIONS',
+        headers: {
+            Origin: wildcardOrigin,
+            'Access-Control-Request-Method': 'GET',
+            'Access-Control-Request-Headers': 'authorization'
+        }
+    });
+    assert.equal(wildcardPreflight.status, 204);
+    assert.equal(wildcardPreflight.headers.get('access-control-allow-origin'), wildcardOrigin);
+
+    process.env.ALLOWED_ORIGINS = 'http://localhost:5173,http://127.0.0.1:5173,https://app.example.com,https://preview.example.com';
+
     const unrelated = await fetch(`${base}/settings/votingSchedule`, {
         method: 'OPTIONS',
         headers: {

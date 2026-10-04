@@ -12,13 +12,14 @@ import rateLimit from 'express-rate-limit';
 
 const app = express();
 app.set('trust proxy', 1);
-const allowedOrigins = (process.env.ALLOWED_ORIGINS || '').split(',').map(origin => origin.trim()).filter(Boolean);
+const getAllowedOrigins = () => (process.env.ALLOWED_ORIGINS || '').split(',').map(origin => origin.trim()).filter(Boolean);
 
 const originMatches = (origin) => {
     if (!origin) return true;
+    const allowedOrigins = getAllowedOrigins();
     return allowedOrigins.some(pattern => {
         if (pattern === origin) return true;
-        const escaped = pattern.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\\\*/g, '.*');
+        const escaped = pattern.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*');
         return new RegExp(`^${escaped}$`, 'i').test(origin);
     });
 };
