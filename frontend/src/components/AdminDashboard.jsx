@@ -14,6 +14,7 @@ import AdminSchedule from './admin/AdminSchedule';
 import AdminResults from './admin/AdminResults';
 import AdminAnnouncements from './admin/AdminAnnouncements';
 import AdminModal from './admin/AdminModal';
+import StudentImportPreviewModal from './admin/StudentImportPreviewModal';
 
 const AdminDashboard = () => {
   const { logout } = useAuth();
@@ -45,6 +46,10 @@ const AdminDashboard = () => {
   const [showModal, setShowModal] = useState(false);
   const [modalType, setModalType] = useState('position'); // 'position', 'candidate', 'student'
   const [editItem, setEditItem] = useState(null);
+
+  // Import Preview State
+  const [importPreviewOpen, setImportPreviewOpen] = useState(false);
+  const [importPreviewStudents, setImportPreviewStudents] = useState([]);
 
   // --- Data Loading & Effects ---
 
@@ -351,19 +356,22 @@ const AdminDashboard = () => {
     return `${hours}h ${minutes}m`;
   };
 
-  const handleUploadStudents = async (file) => {
-    // Helper: generate a random 8-char alphanumeric password
-    const generatePassword = () => {
-      const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789';
-      return Array.from({ length: 8 }, () => chars[Math.floor(Math.random() * chars.length)]).join('');
-    };
+  // Helper: generate a random 8-char alphanumeric password
+  const generatePassword = () => {
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789';
+    return Array.from({ length: 8 }, () => chars[Math.floor(Math.random() * chars.length)]).join('');
+  };
 
+  /**
+   * Step 1 – Parse the uploaded file and open the preview modal.
+   * No API calls are made here.
+   */
+  const handleUploadStudents = async (file) => {
     try {
       const data = await file.arrayBuffer();
       const workbook = XLSX.read(data);
       const sheet = workbook.Sheets[workbook.SheetNames[0]];
 
-      // sheet_to_json with header:1 gives raw rows; first row = headers
       const raw = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
       if (raw.length < 2) {
         alert('The sheet appears to be empty.');
@@ -377,70 +385,95 @@ const AdminDashboard = () => {
         return idx >= 0 ? String(row[idx] ?? '').trim() : '';
       };
 
-      const importedCredentials = [];
-      let count = 0;
-      let skipped = 0;
-
-      const errors = [];
-
+      const parsed = [];
       for (let i = 1; i < raw.length; i++) {
         const row = raw[i];
         const studentId = col(row, 'studentid') || col(row, 'student_id') || col(row, 'id');
         const name = col(row, 'name');
-
-        // Skip completely empty rows or rows missing required fields
-        if (!studentId || !name) { skipped++; continue; }
+        // Skip completely blank rows
+        if (!studentId && !name) continue;
 
         const classVal = col(row, 'class');
         const program = col(row, 'program') || (/^(BBA|MBA)/i.exec(classVal)?.[1]?.toUpperCase()) || '';
         const semester = col(row, 'semester') || '1';
-        // Auto-generate password if blank
-        const password = col(row, 'password') || generatePassword();
+        const rawPassword = col(row, 'password');
+        const password = rawPassword || generatePassword();
 
-        try {
-          await api.post('/users', {
-            studentId,
-            name,
-            class: classVal || `${program}-Sem${semester}` || 'Unknown',
-            semester,
-            program,
-            password
-          });
-          importedCredentials.push({ studentId, name, program, semester, password });
-          count++;
-        } catch (err) {
-          const msg = err.response?.data?.msg || err.message || 'Unknown error';
-          // Only treat 'already exists' as a silent skip; everything else is a real error
-          if (msg.toLowerCase().includes('already exists')) {
-            skipped++;
-          } else {
-            console.error(`Row ${i} (${studentId}): ${msg}`);
-            errors.push(`Row ${i} — ${studentId} (${name}): ${msg}`);
-          }
-        }
+        parsed.push({
+          studentId,
+          name,
+          class: classVal || (program ? `${program}-Sem${semester}` : ''),
+          program,
+          semester,
+          password,
+          _autoPassword: !rawPassword,
+        });
       }
 
-      await loadData();
-
-      // If any passwords were auto-generated, offer to download credentials
-      if (importedCredentials.length > 0) {
-        const wb = XLSX.utils.book_new();
-        XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(importedCredentials), 'Credentials');
-        XLSX.writeFile(wb, 'imported_student_credentials.xlsx');
+      if (parsed.length === 0) {
+        alert('No student rows found in the sheet.');
+        return;
       }
 
-      let message = `✅ Imported ${count} student(s).`;
-      if (importedCredentials.length > 0) message += ' Credentials file downloaded.';
-      if (skipped > 0) message += `\n⚠️ ${skipped} row(s) skipped (missing ID/name or duplicate).`;
-      if (errors.length > 0) {
-        message += `\n\n❌ ${errors.length} row(s) failed:\n` + errors.slice(0, 10).join('\n');
-        if (errors.length > 10) message += `\n...and ${errors.length - 10} more. Check browser console for full list.`;
-      }
-      alert(message);
+      setImportPreviewStudents(parsed);
+      setImportPreviewOpen(true);
     } catch (err) {
       console.error(err);
-      alert('Error importing file. Please check the format and try again.');
+      alert('Error reading file. Please check the format and try again.');
     }
+  };
+
+  /**
+   * Step 2 – Called by the preview modal after the admin clicks "Import Students".
+   * Receives only the rows the admin selected.
+   */
+  const handleConfirmImport = async (selectedRows) => {
+    const importedCredentials = [];
+    let count = 0;
+    let skipped = 0;
+    const errors = [];
+
+    for (const s of selectedRows) {
+      try {
+        await api.post('/users', {
+          studentId: s.studentId,
+          name: s.name,
+          class: s.class,
+          semester: s.semester,
+          program: s.program,
+          password: s.password,
+        });
+        importedCredentials.push({ studentId: s.studentId, name: s.name, program: s.program, semester: s.semester, password: s.password });
+        count++;
+      } catch (err) {
+        const msg = err.response?.data?.msg || err.message || 'Unknown error';
+        if (msg.toLowerCase().includes('already exists')) {
+          skipped++;
+        } else {
+          console.error(`${s.studentId}: ${msg}`);
+          errors.push(`${s.studentId} (${s.name}): ${msg}`);
+        }
+      }
+    }
+
+    await loadData();
+    setImportPreviewOpen(false);
+
+    // Download credentials for auto-password students
+    if (importedCredentials.length > 0) {
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(importedCredentials), 'Credentials');
+      XLSX.writeFile(wb, 'imported_student_credentials.xlsx');
+    }
+
+    let message = `✅ Imported ${count} student(s).`;
+    if (importedCredentials.length > 0) message += ' Credentials file downloaded.';
+    if (skipped > 0) message += `\n⚠️ ${skipped} duplicate(s) skipped.`;
+    if (errors.length > 0) {
+      message += `\n\n❌ ${errors.length} failed:\n` + errors.slice(0, 8).join('\n');
+      if (errors.length > 8) message += `\n…and ${errors.length - 8} more. See console.`;
+    }
+    alert(message);
   };
 
   const exportResults = () => {
@@ -587,6 +620,14 @@ const AdminDashboard = () => {
             editItem ? handleEditStudent(data) : handleAddStudent(data);
           }
         }}
+      />
+
+      <StudentImportPreviewModal
+        isOpen={importPreviewOpen}
+        students={importPreviewStudents}
+        existingStudentIds={new Set(students.map(s => String(s.studentId)))}
+        onClose={() => setImportPreviewOpen(false)}
+        onConfirm={handleConfirmImport}
       />
     </div>
   );

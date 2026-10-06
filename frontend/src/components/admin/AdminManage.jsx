@@ -162,23 +162,19 @@ const AdminManage = ({
                         </a>
 
                         <div className="relative group">
-                            <Button variant="secondary" icon={Upload}>Import</Button>
+                            <Button variant="secondary" icon={Upload}>Import Sheet</Button>
                             <input
                                 type="file"
                                 accept=".xlsx,.xls,.csv"
                                 className="absolute inset-0 opacity-0 cursor-pointer"
-                                onChange={(e) => e.target.files[0] && handleUploadStudents(e.target.files[0])}
+                                onChange={(e) => {
+                                    const file = e.target.files[0];
+                                    if (file) handleUploadStudents(file);
+                                    // Reset so the same file can be re-selected
+                                    e.target.value = '';
+                                }}
                             />
                         </div>
-
-                        <a
-                            href="/student-template.csv"
-                            download="student-template.csv"
-                            className="glass-button px-6 py-2.5 rounded-xl font-medium flex items-center justify-center gap-2 bg-white/10 hover:bg-white/20 text-white"
-                        >
-                            <Download size={18} />
-                            Download Template
-                        </a>
 
                         <Button variant="secondary" onClick={() => exportCredentials()} icon={Download}>Export Registry</Button>
                         <Button
