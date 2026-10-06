@@ -381,6 +381,8 @@ const AdminDashboard = () => {
       let count = 0;
       let skipped = 0;
 
+      const errors = [];
+
       for (let i = 1; i < raw.length; i++) {
         const row = raw[i];
         const studentId = col(row, 'studentid') || col(row, 'student_id') || col(row, 'id');
@@ -406,8 +408,15 @@ const AdminDashboard = () => {
           });
           importedCredentials.push({ studentId, name, program, semester, password });
           count++;
-        } catch {
-          // Skip duplicates silently
+        } catch (err) {
+          const msg = err.response?.data?.msg || err.message || 'Unknown error';
+          // Only treat 'already exists' as a silent skip; everything else is a real error
+          if (msg.toLowerCase().includes('already exists')) {
+            skipped++;
+          } else {
+            console.error(`Row ${i} (${studentId}): ${msg}`);
+            errors.push(`Row ${i} — ${studentId} (${name}): ${msg}`);
+          }
         }
       }
 
@@ -418,10 +427,16 @@ const AdminDashboard = () => {
         const wb = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(importedCredentials), 'Credentials');
         XLSX.writeFile(wb, 'imported_student_credentials.xlsx');
-        alert(`✅ Imported ${count} student(s). Credentials file downloaded automatically.\n${skipped > 0 ? `⚠️ ${skipped} row(s) skipped (missing studentId or name).` : ''}`);
-      } else {
-        alert(`Imported ${count} student(s).${skipped > 0 ? `\n⚠️ ${skipped} row(s) skipped (missing studentId or name).` : ''}`);
       }
+
+      let message = `✅ Imported ${count} student(s).`;
+      if (importedCredentials.length > 0) message += ' Credentials file downloaded.';
+      if (skipped > 0) message += `\n⚠️ ${skipped} row(s) skipped (missing ID/name or duplicate).`;
+      if (errors.length > 0) {
+        message += `\n\n❌ ${errors.length} row(s) failed:\n` + errors.slice(0, 10).join('\n');
+        if (errors.length > 10) message += `\n...and ${errors.length - 10} more. Check browser console for full list.`;
+      }
+      alert(message);
     } catch (err) {
       console.error(err);
       alert('Error importing file. Please check the format and try again.');

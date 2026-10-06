@@ -9,11 +9,14 @@ import { randomBytes } from 'node:crypto';
 const router = express.Router();
 
 function normalizeAcademicFields(data) {
-    const program = data.program || /^(BBA|MBA)/i.exec(data.class || '')?.[1]?.toUpperCase();
+    const program = data.program || /^(BBA|MBA)/i.exec(data.class || '')?.[1]?.toUpperCase() || '';
     const semester = String(data.semester || '1').replace(/^Semester\s+/i, '');
-    if (program && (!['BBA', 'MBA'].includes(program) ||
-        !(program === 'BBA' ? ['1', '3', '5'] : ['1', '3']).includes(semester))) {
-        throw new Error('FOCMS programs support BBA semesters 1, 3, 5 and MBA semesters 1, 3.');
+    // Only enforce semester rules for known FOCMS programs; allow other programs freely
+    if (['BBA', 'MBA'].includes(program)) {
+        const allowedSemesters = program === 'BBA' ? ['1', '3', '5'] : ['1', '3'];
+        if (!allowedSemesters.includes(semester)) {
+            throw new Error(`${program} only supports semesters: ${allowedSemesters.join(', ')}. Got: ${semester}`);
+        }
     }
     return { program, semester, class: data.class || (program ? `${program}-Sem${semester}` : '') };
 }
