@@ -171,6 +171,15 @@ const AdminManage = ({
                             />
                         </div>
 
+                        <a
+                            href="/student-template.csv"
+                            download="student-template.csv"
+                            className="glass-button px-6 py-2.5 rounded-xl font-medium flex items-center justify-center gap-2 bg-white/10 hover:bg-white/20 text-white"
+                        >
+                            <Download size={18} />
+                            Download Template
+                        </a>
+
                         <Button variant="secondary" onClick={() => exportCredentials()} icon={Download}>Export Registry</Button>
                         <Button
                             onClick={() => { setModalType('student'); setEditItem(null); setShowModal(true); }}

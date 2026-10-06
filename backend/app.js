@@ -12,16 +12,75 @@ import rateLimit from 'express-rate-limit';
 
 const app = express();
 app.set('trust proxy', 1);
-const allowedOrigins = new Set((process.env.ALLOWED_ORIGINS ||
-    'http://localhost:5173,http://127.0.0.1:5173').split(',').map(origin => origin.trim()));
-const vercelPreviewOrigin = /^https:\/\/focms-sas-elections-2k25-[a-z0-9-]+-sanskar-dakhores-projects\.vercel\.app$/;
+const cleanOriginString = (val) => {
+    if (!val || typeof val !== 'string') return '';
+    let cleaned = val.trim().replace(/^['"`]|['"`]$/g, '');
+    cleaned = cleaned.replace(/\/+$/, '');
+    if ((cleaned.startsWith('http://') || cleaned.startsWith('https://')) && !cleaned.includes('*')) {
+        try {
+            const parsed = new URL(cleaned);
+            cleaned = parsed.origin;
+        } catch {
+            // keep as is
+        }
+    }
+    return cleaned.toLowerCase();
+};
 
-app.use(cors({
-    origin: (origin, callback) => callback(null,
-        !origin || allowedOrigins.has(origin) || vercelPreviewOrigin.test(origin)),
+const getAllowedOrigins = () => {
+    const rawEnv = [
+        process.env.ALLOWED_ORIGINS,
+        process.env.ALLOWED_ORIGIN,
+        process.env.ALLOWED_URLS,
+        process.env.ALLOWED_URL,
+        process.env.CORS_ORIGIN,
+        process.env.FRONTEND_URL,
+        process.env.CLIENT_URL,
+    ].filter(Boolean).join(',');
+
+    return Array.from(new Set(
+        rawEnv
+            .split(/[,;\s]+/)
+            .map(cleanOriginString)
+            .filter(Boolean)
+    ));
+};
+
+const originMatches = (origin) => {
+    if (!origin) return true;
+    const cleanOrigin = cleanOriginString(origin);
+    const allowedOrigins = getAllowedOrigins();
+
+    return allowedOrigins.some(pattern => {
+        if (pattern === '*' || pattern === cleanOrigin) return true;
+
+        if (!pattern.startsWith('http://') && !pattern.startsWith('https://')) {
+            if (`https://${pattern}` === cleanOrigin || `http://${pattern}` === cleanOrigin) {
+                return true;
+            }
+        }
+
+        const escaped = pattern.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*');
+        if (new RegExp(`^${escaped}$`, 'i').test(cleanOrigin)) return true;
+
+        if (!pattern.startsWith('http://') && !pattern.startsWith('https://')) {
+            const escapedWithProto = `https?:\\/\\/${escaped}`;
+            if (new RegExp(`^${escapedWithProto}$`, 'i').test(cleanOrigin)) return true;
+        }
+
+        return false;
+    });
+};
+
+const corsOptions = {
+    origin: (origin, callback) => callback(null, originMatches(origin)),
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization'],
-}));
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin'],
+    credentials: true,
+    optionsSuccessStatus: 204,
+};
+
+app.use(cors(corsOptions));
 app.use('/api', rateLimit({
     windowMs: 60 * 1000,
     limit: 1200,

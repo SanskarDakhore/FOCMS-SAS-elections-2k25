@@ -17,10 +17,10 @@ const AdminSidebar = ({ activeTab, setActiveTab, onLogout, isMobileOpen, onMobil
                     type="button"
                     aria-label="Close navigation menu"
                     onClick={onMobileClose}
-                    className="fixed inset-0 z-20 bg-black/60 md:hidden"
+                    className="fixed inset-0 z-30 bg-black/60 md:hidden"
                 />
             )}
-        <aside className={`glass-panel fixed left-0 top-0 z-30 flex h-screen flex-col border-r border-white/10 transition-[width] duration-300 ${isMobileOpen ? 'w-64' : 'w-16 md:w-64'}`}>
+        <aside className={`glass-panel fixed left-0 top-0 z-40 flex h-screen flex-col border-r border-white/10 transition-[width] duration-300 ${isMobileOpen ? 'w-64' : 'w-16 md:w-64'}`}>
             <div className={`${isMobileOpen ? 'p-6' : 'p-3 md:p-6'}`}>
                 <div className={`flex items-start ${isMobileOpen ? 'justify-between gap-2' : 'justify-center md:justify-between'}`}>
                     <div>

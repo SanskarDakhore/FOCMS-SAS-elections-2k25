@@ -35,7 +35,7 @@ Open `http://localhost:5173`. The frontend proxies `/api` to the backend on port
 
 ## Students
 
-The import template is [frontend/public/student-template.csv](frontend/public/student-template.csv). Columns: `studentId,name,program,semester,class,password`. Numeric student IDs are converted to text. For FOCMS classes, use `BBA-Sem1`, `BBA-Sem3`, `BBA-Sem5`, `MBA-Sem1`, or `MBA-Sem3`.
+The CSV import template can be downloaded from **Student Registry → Download Template**; it is also available at [frontend/public/student-template.csv](frontend/public/student-template.csv). Columns: `studentId,name,program,semester,class,password`. Numeric student IDs are converted to text. For FOCMS classes, use `BBA-Sem1`, `BBA-Sem3`, `BBA-Sem5`, `MBA-Sem1`, or `MBA-Sem3`.
 
 Blank import passwords retain the previous portal's `password123` default. Set individual passwords in the import or use **Reset Passwords** to generate unique credentials. Stored passwords are hashed and cannot be exported; **Export Registry** and **Export Filtered** export student details, while **Reset Passwords** downloads the newly generated passwords once.
 

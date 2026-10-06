@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import {
     Megaphone, Plus, Pencil, Trash2, Eye, EyeOff, CheckCircle,
     AlertCircle, Clock, Tag, X, Save, AlertTriangle
@@ -55,6 +56,17 @@ const AdminAnnouncements = () => {
     useEffect(() => {
         loadAnnouncements();
     }, []);
+
+    useEffect(() => {
+        if (showForm || deleteConfirm || previewItem) {
+            document.body.style.overflow = 'hidden';
+        } else {
+            document.body.style.overflow = 'unset';
+        }
+        return () => {
+            document.body.style.overflow = 'unset';
+        };
+    }, [showForm, deleteConfirm, previewItem]);
 
     const loadAnnouncements = async () => {
         setLoading(true);
@@ -238,19 +250,28 @@ const AdminAnnouncements = () => {
             )}
 
             {/* Create / Edit Modal */}
-            {showForm && (
-                <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-                    <div className="bg-[#1e293b] border border-white/10 rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto shadow-2xl">
-                        <div className="flex justify-between items-center p-6 border-b border-white/10">
-                            <h3 className="text-xl font-bold text-white">
+            {showForm && typeof document !== 'undefined' && createPortal(
+                <div
+                    className="fixed inset-0 z-[60] bg-black/70 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4 overflow-y-auto"
+                    onClick={(e) => {
+                        if (e.target === e.currentTarget) setShowForm(false);
+                    }}
+                >
+                    <div className="bg-[#1e293b] border border-white/10 rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto shadow-2xl my-auto animate-slide-up flex flex-col">
+                        <div className="flex justify-between items-center p-4 sm:p-6 border-b border-white/10 sticky top-0 bg-[#1e293b] z-10">
+                            <h3 className="text-lg sm:text-xl font-bold text-white truncate mr-2">
                                 {editItem ? 'Edit Announcement' : 'New Announcement'}
                             </h3>
-                            <button onClick={() => setShowForm(false)} className="text-gray-400 hover:text-white">
+                            <button
+                                onClick={() => setShowForm(false)}
+                                aria-label="Close modal"
+                                className="text-gray-400 hover:text-white p-2 rounded-lg hover:bg-white/10 transition-colors flex-shrink-0"
+                            >
                                 <X size={20} />
                             </button>
                         </div>
 
-                        <div className="p-6 space-y-5">
+                        <div className="p-4 sm:p-6 space-y-5 overflow-y-auto">
                             {error && (
                                 <div className="p-3 bg-red-500/10 border border-red-500/30 rounded-xl text-red-300 text-sm flex items-center gap-2">
                                     <AlertCircle size={16} />{error}
@@ -264,7 +285,7 @@ const AdminAnnouncements = () => {
                                     value={form.title}
                                     onChange={e => setForm(p => ({ ...p, title: e.target.value }))}
                                     placeholder="e.g. Student Council Elections 2025"
-                                    className="glass-input w-full px-4 py-3 rounded-xl"
+                                    className="glass-input w-full px-4 py-3 rounded-xl text-sm sm:text-base"
                                     maxLength={120}
                                 />
                             </div>
@@ -276,13 +297,13 @@ const AdminAnnouncements = () => {
                                     onChange={e => setForm(p => ({ ...p, description: e.target.value }))}
                                     placeholder="Write the announcement content here..."
                                     rows={4}
-                                    className="glass-input w-full px-4 py-3 rounded-xl resize-none"
+                                    className="glass-input w-full px-4 py-3 rounded-xl resize-none text-sm sm:text-base"
                                     maxLength={600}
                                 />
                                 <p className="text-xs text-gray-500 mt-1 text-right">{form.description.length}/600</p>
                             </div>
 
-                            <div className="grid grid-cols-2 gap-4">
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                 <div>
                                     <label className="block text-sm font-medium text-gray-300 mb-2">
                                         <Tag size={14} className="inline mr-1" />Category
@@ -290,7 +311,7 @@ const AdminAnnouncements = () => {
                                     <select
                                         value={form.category}
                                         onChange={e => setForm(p => ({ ...p, category: e.target.value }))}
-                                        className="glass-input w-full px-4 py-3 rounded-xl"
+                                        className="glass-input w-full px-4 py-3 rounded-xl text-sm"
                                     >
                                         {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
                                     </select>
@@ -300,7 +321,7 @@ const AdminAnnouncements = () => {
                                     <select
                                         value={form.badge}
                                         onChange={e => setForm(p => ({ ...p, badge: e.target.value }))}
-                                        className="glass-input w-full px-4 py-3 rounded-xl"
+                                        className="glass-input w-full px-4 py-3 rounded-xl text-sm"
                                     >
                                         <option value="">None</option>
                                         {BADGES.filter(b => b).map(b => <option key={b} value={b}>{b}</option>)}
@@ -308,14 +329,14 @@ const AdminAnnouncements = () => {
                                 </div>
                             </div>
 
-                            <div className="grid grid-cols-2 gap-4">
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                 <div>
                                     <label className="block text-sm font-medium text-gray-300 mb-2">Start Date (optional)</label>
                                     <input
                                         type="datetime-local"
                                         value={form.startDate}
                                         onChange={e => setForm(p => ({ ...p, startDate: e.target.value }))}
-                                        className="glass-input w-full px-4 py-3 rounded-xl"
+                                        className="glass-input w-full px-4 py-3 rounded-xl text-sm"
                                     />
                                 </div>
                                 <div>
@@ -324,20 +345,20 @@ const AdminAnnouncements = () => {
                                         type="datetime-local"
                                         value={form.expiryDate}
                                         onChange={e => setForm(p => ({ ...p, expiryDate: e.target.value }))}
-                                        className="glass-input w-full px-4 py-3 rounded-xl"
+                                        className="glass-input w-full px-4 py-3 rounded-xl text-sm"
                                     />
                                 </div>
                             </div>
 
-                            <label className="flex items-center gap-3 cursor-pointer p-4 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 transition-colors">
+                            <label className="flex items-start sm:items-center gap-3 cursor-pointer p-4 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 transition-colors">
                                 <input
                                     type="checkbox"
                                     checked={form.isActive}
                                     onChange={e => setForm(p => ({ ...p, isActive: e.target.checked }))}
-                                    className="h-5 w-5 rounded border-gray-600 text-indigo-600 bg-gray-700"
+                                    className="h-5 w-5 mt-0.5 sm:mt-0 rounded border-gray-600 text-indigo-600 bg-gray-700 flex-shrink-0"
                                 />
                                 <div>
-                                    <span className="font-medium text-white">Publish immediately</span>
+                                    <span className="font-medium text-white text-sm sm:text-base">Publish immediately</span>
                                     <span className="block text-xs text-gray-400 mt-0.5">If unchecked, announcement is saved as draft and hidden from public</span>
                                 </div>
                             </label>
@@ -351,47 +372,66 @@ const AdminAnnouncements = () => {
                             )}
                         </div>
 
-                        <div className="flex justify-end gap-3 p-6 border-t border-white/10">
-                            <Button onClick={() => setShowForm(false)} variant="ghost">Cancel</Button>
-                            <Button onClick={handleSave} disabled={saving} icon={saving ? null : Save} variant="primary">
+                        <div className="flex flex-col-reverse sm:flex-row justify-end gap-3 p-4 sm:p-6 border-t border-white/10 sticky bottom-0 bg-[#1e293b]">
+                            <Button onClick={() => setShowForm(false)} variant="ghost" className="w-full sm:w-auto justify-center">Cancel</Button>
+                            <Button onClick={handleSave} disabled={saving} icon={saving ? null : Save} variant="primary" className="w-full sm:w-auto justify-center">
                                 {saving ? 'Saving...' : editItem ? 'Save Changes' : 'Publish Announcement'}
                             </Button>
                         </div>
                     </div>
-                </div>
+                </div>,
+                document.body
             )}
 
             {/* Delete Confirmation Modal */}
-            {deleteConfirm && (
-                <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-                    <div className="bg-[#1e293b] border border-red-500/30 rounded-2xl w-full max-w-md p-6 shadow-2xl">
+            {deleteConfirm && typeof document !== 'undefined' && createPortal(
+                <div
+                    className="fixed inset-0 z-[60] bg-black/70 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4 overflow-y-auto"
+                    onClick={(e) => {
+                        if (e.target === e.currentTarget) setDeleteConfirm(null);
+                    }}
+                >
+                    <div className="bg-[#1e293b] border border-red-500/30 rounded-2xl w-full max-w-md p-6 shadow-2xl my-auto animate-slide-up">
                         <div className="flex items-center gap-3 mb-4">
                             <AlertTriangle className="text-red-400 w-8 h-8 flex-shrink-0" />
                             <h3 className="text-xl font-bold text-white">Delete Announcement?</h3>
                         </div>
                         <p className="text-gray-400 mb-2">This will permanently delete:</p>
                         <p className="font-bold text-white mb-6">"{deleteConfirm.title}"</p>
-                        <div className="flex gap-3">
+                        <div className="flex flex-col-reverse sm:flex-row gap-3">
                             <Button onClick={() => setDeleteConfirm(null)} variant="ghost" className="flex-1 justify-center">Cancel</Button>
                             <Button onClick={() => handleDelete(deleteConfirm._id)} variant="danger" icon={Trash2} className="flex-1 justify-center">
                                 Delete
                             </Button>
                         </div>
                     </div>
-                </div>
+                </div>,
+                document.body
             )}
 
             {/* Preview Modal */}
-            {previewItem && (
-                <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-                    <div className="bg-[#1e293b] border border-white/10 rounded-2xl w-full max-w-lg p-6 shadow-2xl">
+            {previewItem && typeof document !== 'undefined' && createPortal(
+                <div
+                    className="fixed inset-0 z-[60] bg-black/70 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4 overflow-y-auto"
+                    onClick={(e) => {
+                        if (e.target === e.currentTarget) setPreviewItem(null);
+                    }}
+                >
+                    <div className="bg-[#1e293b] border border-white/10 rounded-2xl w-full max-w-lg p-4 sm:p-6 shadow-2xl my-auto animate-slide-up">
                         <div className="flex justify-between items-center mb-4">
                             <h3 className="text-lg font-bold text-white">Public Preview</h3>
-                            <button onClick={() => setPreviewItem(null)} className="text-gray-400 hover:text-white"><X size={20} /></button>
+                            <button
+                                onClick={() => setPreviewItem(null)}
+                                aria-label="Close preview"
+                                className="text-gray-400 hover:text-white p-2 rounded-lg hover:bg-white/10 transition-colors"
+                            >
+                                <X size={20} />
+                            </button>
                         </div>
                         <AnnouncementCard item={previewItem} preview />
                     </div>
-                </div>
+                </div>,
+                document.body
             )}
         </div>
     );

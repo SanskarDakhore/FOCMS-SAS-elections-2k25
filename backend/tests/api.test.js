@@ -48,6 +48,7 @@ async function request(method, route, data, token) {
 }
 
 before(async () => {
+    process.env.ALLOWED_ORIGINS = 'http://localhost:5173,http://127.0.0.1:5173,https://app.example.com,https://preview.example.com';
     const port = await freePort();
     dataDir = await mkdtemp(path.join(tmpdir(), 'focms-election-test-'));
     mongo = spawn(process.env.MONGOD_BINARY || 'mongod', ['--dbpath', dataDir, '--port', String(port),
@@ -128,36 +129,67 @@ test('FOCMS health, protected results, no public seed admin, and invalid JWT rej
     assert.equal((await request('GET', '/users', undefined, staleRole)).status, 403);
 });
 
-test('CORS allows this project Vercel preview origin but rejects unrelated preview origins', async () => {
-    const previewOrigin = 'https://focms-sas-elections-2k25-pffdfo4cy-sanskar-dakhores-projects.vercel.app';
-    const preflight = await fetch(`${base}/settings/votingSchedule`, {
+test('CORS allows configured env origins and rejects unrelated domains', async () => {
+    const allowedOrigins = ['https://app.example.com', 'https://preview.example.com'];
+
+    for (const origin of allowedOrigins) {
+        const preflight = await fetch(`${base}/settings/votingSchedule`, {
+            method: 'OPTIONS',
+            headers: {
+                Origin: origin,
+                'Access-Control-Request-Method': 'GET',
+                'Access-Control-Request-Headers': 'authorization'
+            }
+        });
+        assert.equal(preflight.status, 204);
+        assert.equal(preflight.headers.get('access-control-allow-origin'), origin);
+    }
+
+    const wildcardOrigin = 'https://focms-sas-elections-2k25-git-main-country.vercel.app';
+    process.env.ALLOWED_ORIGINS = 'http://localhost:5173,http://127.0.0.1:5173,https://focms-sas-elections-2k25*.vercel.app';
+    const wildcardPreflight = await fetch(`${base}/settings/votingSchedule`, {
         method: 'OPTIONS',
         headers: {
-            Origin: previewOrigin,
+            Origin: wildcardOrigin,
             'Access-Control-Request-Method': 'GET',
             'Access-Control-Request-Headers': 'authorization'
         }
     });
-    assert.equal(preflight.status, 204);
-    assert.equal(preflight.headers.get('access-control-allow-origin'), previewOrigin);
+    assert.equal(wildcardPreflight.status, 204);
+    assert.equal(wildcardPreflight.headers.get('access-control-allow-origin'), wildcardOrigin);
+
+    // Test trailing slash and quotes handling
+    process.env.ALLOWED_ORIGINS = '"https://trailing-slash.example.com/", https://quoted.example.com/';
+    const trailingSlashPreflight = await fetch(`${base}/settings/votingSchedule`, {
+        method: 'OPTIONS',
+        headers: {
+            Origin: 'https://trailing-slash.example.com',
+            'Access-Control-Request-Method': 'GET'
+        }
+    });
+    assert.equal(trailingSlashPreflight.status, 204);
+    assert.equal(trailingSlashPreflight.headers.get('access-control-allow-origin'), 'https://trailing-slash.example.com');
+
+    process.env.ALLOWED_ORIGINS = 'http://localhost:5173,http://127.0.0.1:5173,https://app.example.com,https://preview.example.com';
 
     const unrelated = await fetch(`${base}/settings/votingSchedule`, {
         method: 'OPTIONS',
         headers: {
-            Origin: 'https://unrelated-app.vercel.app',
+            Origin: 'https://unrelated-app.example.com',
             'Access-Control-Request-Method': 'GET'
         }
     });
     assert.equal(unrelated.headers.get('access-control-allow-origin'), null);
 
-    const spoofedProjectPrefix = await fetch(`${base}/settings/votingSchedule`, {
+    delete process.env.ALLOWED_ORIGINS;
+    const noEnvPreflight = await fetch(`${base}/settings/votingSchedule`, {
         method: 'OPTIONS',
         headers: {
-            Origin: 'https://focms-sas-elections-2k25-untrusted.vercel.app',
+            Origin: 'https://any-domain.com',
             'Access-Control-Request-Method': 'GET'
         }
     });
-    assert.equal(spoofedProjectPrefix.headers.get('access-control-allow-origin'), null);
+    assert.equal(noEnvPreflight.headers.get('access-control-allow-origin'), null);
 });
 
 test('FOCMS BBA/MBA fields survive student create and edit; hashes are never returned', async () => {

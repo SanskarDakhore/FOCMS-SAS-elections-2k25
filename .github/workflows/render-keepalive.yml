@@ -12,7 +12,11 @@ jobs:
     steps:
       - name: Ping Backend Health Endpoint
         run: |
-          TARGET_URL="${{ secrets.RENDER_BACKEND_URL || 'https://focms-sas-election-api.onrender.com' }}"
+          TARGET_URL="${{ secrets.RENDER_BACKEND_URL }}"
+          if [ -z "$TARGET_URL" ]; then
+            echo "RENDER_BACKEND_URL secret is not set. Skipping keep-alive ping."
+            exit 0
+          fi
           ENDPOINT="${TARGET_URL%/}/api/health"
           echo "Pinging health endpoint at: $ENDPOINT"
           HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 30 "$ENDPOINT" || echo "000")
