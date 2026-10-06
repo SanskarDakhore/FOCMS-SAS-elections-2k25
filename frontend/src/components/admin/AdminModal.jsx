@@ -334,9 +334,9 @@ const AdminModal = ({
                     </>
                 )}
 
-                <div className="flex justify-end gap-3 mt-6 pt-4 border-t border-white/10">
-                    <Button type="button" onClick={onClose} variant="ghost">Cancel</Button>
-                    <Button type="submit" variant="primary" disabled={uploading}>
+                <div className="flex flex-col-reverse sm:flex-row justify-end gap-3 mt-6 pt-4 border-t border-white/10">
+                    <Button type="button" onClick={onClose} variant="ghost" className="w-full sm:w-auto justify-center">Cancel</Button>
+                    <Button type="submit" variant="primary" disabled={uploading} className="w-full sm:w-auto justify-center">
                         {uploading ? 'Uploading…' : editItem ? 'Update Changes' : 'Create Entry'}
                     </Button>
                 </div>

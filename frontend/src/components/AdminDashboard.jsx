@@ -46,6 +46,12 @@ const AdminDashboard = () => {
   const [modalType, setModalType] = useState('position'); // 'position', 'candidate', 'student'
   const [editItem, setEditItem] = useState(null);
 
+  useEffect(() => {
+    if (showModal) {
+      setMobileSidebarOpen(false);
+    }
+  }, [showModal]);
+
   // --- Data Loading & Effects ---
 
   useEffect(() => {
@@ -421,8 +427,8 @@ const AdminDashboard = () => {
         onMobileClose={() => setMobileSidebarOpen(false)}
       />
 
-      <main className="flex-1 min-w-0 ml-16 p-4 pt-20 sm:p-8 sm:pt-20 md:ml-64 md:pt-8 relative z-10">
-        <div className="fixed left-16 right-0 top-0 z-10 flex items-center gap-3 border-b border-white/10 bg-[#0f172a]/95 px-4 py-3 backdrop-blur md:hidden">
+      <main className="flex-1 min-w-0 ml-16 p-4 pt-20 sm:p-8 sm:pt-20 md:ml-64 md:pt-8 relative">
+        <div className="fixed left-16 right-0 top-0 z-20 flex items-center gap-3 border-b border-white/10 bg-[#0f172a]/95 px-4 py-3 backdrop-blur md:hidden">
           <button
             type="button"
             onClick={() => setMobileSidebarOpen(true)}
