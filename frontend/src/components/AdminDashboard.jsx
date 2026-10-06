@@ -352,33 +352,79 @@ const AdminDashboard = () => {
   };
 
   const handleUploadStudents = async (file) => {
-    // Basic XLSX parsing to API calls
+    // Helper: generate a random 8-char alphanumeric password
+    const generatePassword = () => {
+      const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789';
+      return Array.from({ length: 8 }, () => chars[Math.floor(Math.random() * chars.length)]).join('');
+    };
+
     try {
       const data = await file.arrayBuffer();
       const workbook = XLSX.read(data);
       const sheet = workbook.Sheets[workbook.SheetNames[0]];
-      const json = XLSX.utils.sheet_to_json(sheet);
 
+      // sheet_to_json with header:1 gives raw rows; first row = headers
+      const raw = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
+      if (raw.length < 2) {
+        alert('The sheet appears to be empty.');
+        return;
+      }
+
+      // Normalize headers: lowercase + trim so casing never matters
+      const headers = raw[0].map(h => String(h).toLowerCase().trim());
+      const col = (row, name) => {
+        const idx = headers.indexOf(name);
+        return idx >= 0 ? String(row[idx] ?? '').trim() : '';
+      };
+
+      const importedCredentials = [];
       let count = 0;
-      for (const row of json) {
-        if (!row.studentId || !row.name) continue;
+      let skipped = 0;
+
+      for (let i = 1; i < raw.length; i++) {
+        const row = raw[i];
+        const studentId = col(row, 'studentid') || col(row, 'student_id') || col(row, 'id');
+        const name = col(row, 'name');
+
+        // Skip completely empty rows or rows missing required fields
+        if (!studentId || !name) { skipped++; continue; }
+
+        const classVal = col(row, 'class');
+        const program = col(row, 'program') || (/^(BBA|MBA)/i.exec(classVal)?.[1]?.toUpperCase()) || '';
+        const semester = col(row, 'semester') || '1';
+        // Auto-generate password if blank
+        const password = col(row, 'password') || generatePassword();
+
         try {
           await api.post('/users', {
-            studentId: String(row.studentId),
-            name: row.name,
-            class: row.class || 'Unknown',
-            semester: row.semester || '1',
-            program: row.program || (/^(BBA|MBA)/i.exec(row.class || '')?.[1]?.toUpperCase()),
-            password: row.password || 'password123'
+            studentId,
+            name,
+            class: classVal || `${program}-Sem${semester}` || 'Unknown',
+            semester,
+            program,
+            password
           });
+          importedCredentials.push({ studentId, name, program, semester, password });
           count++;
-        } catch { console.log("Skip duplicate"); }
+        } catch {
+          // Skip duplicates silently
+        }
       }
-      loadData();
-      alert(`Imported ${count} students.`);
+
+      await loadData();
+
+      // If any passwords were auto-generated, offer to download credentials
+      if (importedCredentials.length > 0) {
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(importedCredentials), 'Credentials');
+        XLSX.writeFile(wb, 'imported_student_credentials.xlsx');
+        alert(`✅ Imported ${count} student(s). Credentials file downloaded automatically.\n${skipped > 0 ? `⚠️ ${skipped} row(s) skipped (missing studentId or name).` : ''}`);
+      } else {
+        alert(`Imported ${count} student(s).${skipped > 0 ? `\n⚠️ ${skipped} row(s) skipped (missing studentId or name).` : ''}`);
+      }
     } catch (err) {
       console.error(err);
-      alert("Error importing file.");
+      alert('Error importing file. Please check the format and try again.');
     }
   };
 
@@ -421,8 +467,8 @@ const AdminDashboard = () => {
         onMobileClose={() => setMobileSidebarOpen(false)}
       />
 
-      <main className="flex-1 min-w-0 ml-0 p-4 pt-20 sm:p-8 sm:pt-20 md:ml-64 md:pt-8 relative z-10">
-        <div className="fixed inset-x-0 top-0 z-10 flex items-center gap-3 border-b border-white/10 bg-[#0f172a]/95 px-4 py-3 backdrop-blur md:hidden">
+      <main className="flex-1 min-w-0 ml-16 p-4 pt-20 sm:p-8 sm:pt-20 md:ml-64 md:pt-8 relative z-10">
+        <div className="fixed left-16 right-0 top-0 z-10 flex items-center gap-3 border-b border-white/10 bg-[#0f172a]/95 px-4 py-3 backdrop-blur md:hidden">
           <button
             type="button"
             onClick={() => setMobileSidebarOpen(true)}

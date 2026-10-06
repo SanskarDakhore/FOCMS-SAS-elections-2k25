@@ -152,6 +152,15 @@ const AdminManage = ({
                     <div className="flex flex-wrap gap-2">
                         <Button variant="ghost" onClick={loadData} icon={RefreshCw}>Refresh</Button>
 
+                        <a
+                            href="/student-template.csv"
+                            download="student-template.csv"
+                            className="glass-button px-6 py-2.5 rounded-xl font-medium flex items-center justify-center gap-2 bg-white/10 hover:bg-white/20 text-white"
+                        >
+                            <Download size={18} />
+                            Download Template
+                        </a>
+
                         <div className="relative group">
                             <Button variant="secondary" icon={Upload}>Import</Button>
                             <input
