@@ -15,7 +15,7 @@ import AdminResults from './admin/AdminResults';
 import AdminAnnouncements from './admin/AdminAnnouncements';
 import AdminModal from './admin/AdminModal';
 import StudentImportPreviewModal from './admin/StudentImportPreviewModal';
-import { normalizeStudentName } from '../utils/studentName';
+import { generateVoterId, normalizeStudentName } from '../utils/studentName';
 
 const AdminDashboard = () => {
   const { logout } = useAuth();
@@ -388,6 +388,7 @@ const AdminDashboard = () => {
       }
       const registeredUsers = usersResponse.data;
       const registeredStudents = registeredUsers.filter(user => user.role === 'student');
+      const voterIds = new Set(registeredStudents.map(student => student.voterId).filter(Boolean));
       setStudents(registeredStudents);
       setImportPreviewExistingStudentNames(
         new Set(registeredStudents.map(student => normalizeStudentName(student.name)).filter(Boolean))
@@ -435,6 +436,7 @@ const AdminDashboard = () => {
         parsed.push({
           _rowNumber: i + 1,
           studentId,
+          voterId: generateVoterId(voterIds),
           name,
           class: classVal || (program ? `${program}-Sem${semester}` : ''),
           program,
@@ -470,6 +472,7 @@ const AdminDashboard = () => {
       try {
         const response = await api.post('/users', {
           studentId: s.studentId,
+          voterId: s.voterId,
           name: s.name,
           class: s.class,
           semester: s.semester,

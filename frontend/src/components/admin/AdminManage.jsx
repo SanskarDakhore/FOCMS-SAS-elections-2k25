@@ -229,6 +229,7 @@ const AdminManage = ({
                             <thead>
                                 <tr className="border-b border-white/10 bg-white/5 text-gray-400 text-sm">
                                     <th className="p-4 font-medium">Student ID</th>
+                                    <th className="p-4 font-medium">Voter ID</th>
                                     <th className="p-4 font-medium">Name</th>
                                     <th className="p-4 font-medium">Class</th>
                                     <th className="p-4 font-medium">Semester</th>
@@ -240,6 +241,7 @@ const AdminManage = ({
                                 {filteredStudents.map(student => (
                                     <tr key={student._id} className="hover:bg-white/5 transition-colors text-gray-300">
                                         <td className="p-4 font-medium text-white">{student.studentId}</td>
+                                        <td className="p-4 font-mono text-xs text-indigo-200">{student.voterId}</td>
                                         <td className="p-4">{student.name}</td>
                                         <td className="p-4">{student.class || student.program || '-'}</td>
                                         <td className="p-4">{student.semester || '-'}</td>

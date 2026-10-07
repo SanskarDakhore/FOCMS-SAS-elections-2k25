@@ -84,9 +84,11 @@ router.get('/', auth, async (req, res) => {
 router.post('/', auth, async (req, res) => {
     if (req.user.role !== 'admin') return res.status(403).json({ msg: 'Access denied' });
 
-    const { studentId, name, password } = req.body;
+    const { studentId, voterId: requestedVoterId, name, password } = req.body;
     if (typeof studentId !== 'string' || !studentId.trim() || typeof name !== 'string' || !name.trim() ||
-        (password !== undefined && typeof password !== 'string')) {
+        (password !== undefined && typeof password !== 'string') ||
+        (requestedVoterId !== undefined &&
+            (typeof requestedVoterId !== 'string' || !/^VTR-[A-F0-9]{24}$/.test(requestedVoterId)))) {
         return res.status(400).json({ msg: 'Student ID, name, and a text password are required.' });
     }
 
@@ -99,10 +101,13 @@ router.post('/', auth, async (req, res) => {
         if (existingName) {
             return res.status(409).json({ msg: 'A student with the same name and surname already exists.' });
         }
+        if (requestedVoterId && await User.exists({ role: 'student', voterId: requestedVoterId })) {
+            return res.status(409).json({ msg: 'Voter ID is already assigned. Refresh the preview and try again.' });
+        }
 
         const user = new User({
             studentId: studentId.trim(),
-            voterId: generateVoterId(),
+            voterId: requestedVoterId || generateVoterId(),
             name: name.trim(),
             nameKey,
             password: password || 'password123',
@@ -118,7 +123,7 @@ router.post('/', auth, async (req, res) => {
                 await user.save();
                 break;
             } catch (err) {
-                if (err.code !== 11000 || !err.keyPattern?.voterId || attempt >= 2) throw err;
+                if (err.code !== 11000 || !err.keyPattern?.voterId || requestedVoterId || attempt >= 2) throw err;
                 user.voterId = generateVoterId();
             }
         }

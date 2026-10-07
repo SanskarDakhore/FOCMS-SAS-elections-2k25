@@ -212,13 +212,14 @@ test('CORS allows configured env origins and rejects unrelated domains', async (
 });
 
 test('student accounts with repeated IDs remain distinct and duplicate normalized names are rejected', async () => {
+    const previewVoterId = 'VTR-AAAAAAAAAAAAAAAAAAAAAAAA';
     const create = await request('POST', '/users', {
-        studentId: 'BBA101', name: 'Another Person', password: 'integration-password',
+        studentId: 'BBA101', voterId: previewVoterId, name: 'Another Person', password: 'integration-password',
         program: 'BBA', semester: '1', class: 'BBA-Sem1'
     }, adminToken);
     assert.equal(create.status, 200);
     assert.notEqual(String(create.body._id), studentAccountIds.BBA101);
-    assert.ok(create.body.voterId);
+    assert.equal(create.body.voterId, previewVoterId);
     assert.notEqual(create.body.voterId, studentVoterIds.BBA101);
 
     const loginWithoutVoterId = await request('POST', '/auth/login', {
@@ -237,6 +238,11 @@ test('student accounts with repeated IDs remain distinct and duplicate normalize
         studentId: 'BBA999', name: 'another person', password: 'integration-password'
     }, adminToken);
     assert.equal(duplicateName.status, 409);
+
+    const duplicateVoterId = await request('POST', '/users', {
+        studentId: 'BBA999', voterId: previewVoterId, name: 'Third Person', password: 'integration-password'
+    }, adminToken);
+    assert.equal(duplicateVoterId.status, 409);
 });
 
 test('FOCMS BBA/MBA fields survive student create and edit; hashes are never returned', async () => {
@@ -322,7 +328,12 @@ test('class batches enforce capacity and cooldown, then admit missed unvoted stu
         request('POST', '/votes', ballot, thirdStudentToken)
     ]);
     assert.deepEqual(submissions.map(response => response.status), [200, 200]);
-    const batch = await request('GET', '/votes/batch', undefined, adminToken);
+    let batch;
+    for (let attempt = 0; attempt < 20; attempt++) {
+        batch = await request('GET', '/votes/batch', undefined, adminToken);
+        if (batch.body.status === 'cooldown') break;
+        await delay(25);
+    }
     assert.equal(batch.body.status, 'cooldown', JSON.stringify(batch.body));
     assert.equal(batch.body.remainingCount, 0);
 });

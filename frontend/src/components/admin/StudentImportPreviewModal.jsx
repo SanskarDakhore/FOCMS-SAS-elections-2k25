@@ -100,6 +100,7 @@ const StudentImportPreviewModal = ({
       const q = search.toLowerCase();
       list = list.filter(s =>
         String(s.studentId || '').toLowerCase().includes(q) ||
+        String(s.voterId || '').toLowerCase().includes(q) ||
         String(s.name || '').toLowerCase().includes(q) ||
         String(s.program || '').toLowerCase().includes(q)
       );
@@ -313,6 +314,7 @@ const StudentImportPreviewModal = ({
                 </th>
                 <th className="py-3 px-2 text-left">#</th>
                 <th className="py-3 px-3 text-left">Student ID</th>
+                <th className="py-3 px-3 text-left">Voter ID</th>
                 <th className="py-3 px-3 text-left">Name</th>
                 <th className="py-3 px-3 text-left">Program</th>
                 <th className="py-3 px-2 text-left">Sem</th>
@@ -324,7 +326,7 @@ const StudentImportPreviewModal = ({
             <tbody>
               {visible.length === 0 ? (
                 <tr>
-                  <td colSpan={9} className="py-14 text-center text-gray-500">
+                  <td colSpan={10} className="py-14 text-center text-gray-500">
                     No rows match your filter or search.
                   </td>
                 </tr>
@@ -364,6 +366,7 @@ const StudentImportPreviewModal = ({
                       <td className="py-3 px-3 font-mono font-semibold text-white">
                         {row.studentId || <span className="text-red-400 italic text-xs">missing</span>}
                       </td>
+                      <td className="py-3 px-3 font-mono text-xs text-indigo-200">{row.voterId}</td>
                       <td className="py-3 px-3 text-gray-200">
                         {row.name || <span className="text-red-400 italic text-xs">missing</span>}
                       </td>
