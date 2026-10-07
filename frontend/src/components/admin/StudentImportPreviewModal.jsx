@@ -297,7 +297,7 @@ const StudentImportPreviewModal = ({
 
         {/* Table */}
         <div className="flex-1 overflow-auto mx-6 mb-1 rounded-xl" style={{ border: '1px solid rgba(255,255,255,0.07)' }}>
-          <table className="w-full text-sm border-collapse min-w-[700px]">
+          <table className="w-full text-sm border-collapse min-w-[900px]">
             <thead
               className="sticky top-0 z-10"
               style={{ background: 'rgba(15,23,42,0.97)', borderBottom: '1px solid rgba(255,255,255,0.08)' }}

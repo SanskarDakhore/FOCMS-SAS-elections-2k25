@@ -37,22 +37,48 @@ export async function migrateStudentIdentity() {
         }
     }
 
-    const nameUpdates = studentAccounts.map(student => ({
-        updateOne: {
-            filter: { _id: student._id },
-            update: { $set: {
-                nameKey: normalizeStudentName(student.name),
-                ...(!student.voterId ? { voterId: generateVoterId() } : {})
-            } }
-        }
-    }));
-    if (nameUpdates.length) await usersCollection.bulkWrite(nameUpdates);
-
     const indexes = await usersCollection.indexes();
     const uniqueStudentIdIndex = indexes.find(index =>
         index.unique && index.key?.studentId === 1
     );
     if (uniqueStudentIdIndex) await usersCollection.dropIndex(uniqueStudentIdIndex.name);
+    const voterIdCounts = new Map();
+    for (const student of studentAccounts) {
+        if (/^[A-Z0-9]{6}$/.test(student.voterId || '')) {
+            voterIdCounts.set(student.voterId, (voterIdCounts.get(student.voterId) || 0) + 1);
+        }
+    }
+    const reservedVoterIds = new Set([...voterIdCounts]
+        .filter(([, count]) => count === 1)
+        .map(([voterId]) => voterId));
+    const voterIdUpdates = [];
+    for (const student of studentAccounts) {
+        if (/^[A-Z0-9]{6}$/.test(student.voterId || '') && voterIdCounts.get(student.voterId) === 1) continue;
+        let voterId = generateVoterId();
+        while (reservedVoterIds.has(voterId)) {
+            voterId = generateVoterId();
+        }
+        reservedVoterIds.add(voterId);
+        voterIdUpdates.push({ updateOne: {
+            filter: { _id: student._id },
+            update: { $set: { voterId } }
+        } });
+    }
+    if (voterIdUpdates.length) {
+        const voterIdIndexes = indexes.filter(index => index.unique && index.key?.voterId === 1);
+        for (const index of voterIdIndexes) await usersCollection.dropIndex(index.name);
+    }
+    const studentUpdates = studentAccounts.map(student => ({
+        updateOne: {
+            filter: { _id: student._id },
+            update: { $set: { nameKey: normalizeStudentName(student.name) } }
+        }
+    }));
+    if (studentUpdates.length) await usersCollection.bulkWrite(studentUpdates);
+    if (voterIdUpdates.length) {
+        await usersCollection.bulkWrite(voterIdUpdates);
+        console.warn(`Student identity migration assigned ${voterIdUpdates.length} student(s) new six-character Voter IDs.`);
+    }
     await usersCollection.createIndex({ studentId: 1 }, { name: 'studentId_1' });
     await usersCollection.createIndex({ voterId: 1 }, {
         unique: true,

@@ -89,7 +89,6 @@ before(async () => {
     const students = await User.find({ role: 'student' }).select('_id studentId voterId').lean();
     studentAccountIds = Object.fromEntries(students
         .map(student => [student.studentId, String(student._id)]));
-    studentVoterIds = Object.fromEntries(students.map(student => [student.studentId, student.voterId]));
     const positions = await Position.create([{ name: 'President' }, { name: 'Secretary' }]);
     const candidates = await Candidate.create(positions.map(position => ({ name: position.name + ' Candidate',
         class: 'BBA-Sem1', positionId: position._id })));
@@ -103,8 +102,16 @@ before(async () => {
         studentClass: 'BBA-Sem1',
         timestamp: new Date()
     });
+    await User.collection.updateOne(
+        { _id: students[0]._id },
+        { $set: { voterId: 'VTR-THIS-IS-TOO-LONG' } }
+    );
     await migrateStudentIdentity();
     assert.equal(await Vote.countDocuments({ userId: studentAccountIds.BBA101 }), 1);
+    const migratedStudents = await User.find({ role: 'student' }).select('_id studentId voterId').lean();
+    studentVoterIds = Object.fromEntries(migratedStudents.map(student => [student.studentId, student.voterId]));
+    assert.ok(migratedStudents.every(student => /^[A-Z0-9]{6}$/.test(student.voterId)));
+    assert.equal(new Set(migratedStudents.map(student => student.voterId)).size, migratedStudents.length);
     await Vote.deleteOne({ userId: studentAccountIds.BBA101 });
     initialSchedule = { votingStart: new Date(Date.now() - 60000).toISOString(),
         votingEnd: new Date(Date.now() + 3600000).toISOString(), isActive: true };
@@ -212,7 +219,7 @@ test('CORS allows configured env origins and rejects unrelated domains', async (
 });
 
 test('student accounts with repeated IDs remain distinct and duplicate normalized names are rejected', async () => {
-    const previewVoterId = 'VTR-AAAAAAAAAAAAAAAAAAAAAAAA';
+    const previewVoterId = 'A1B2C3';
     const create = await request('POST', '/users', {
         studentId: 'BBA101', voterId: previewVoterId, name: 'Another Person', password: 'integration-password',
         program: 'BBA', semester: '1', class: 'BBA-Sem1'
@@ -243,12 +250,17 @@ test('student accounts with repeated IDs remain distinct and duplicate normalize
         studentId: 'BBA999', voterId: previewVoterId, name: 'Third Person', password: 'integration-password'
     }, adminToken);
     assert.equal(duplicateVoterId.status, 409);
+    const invalidVoterId = await request('POST', '/users', {
+        studentId: 'BBA999', voterId: 'VTR-TOO-LONG', name: 'Fourth Person', password: 'integration-password'
+    }, adminToken);
+    assert.equal(invalidVoterId.status, 400);
 });
 
 test('FOCMS BBA/MBA fields survive student create and edit; hashes are never returned', async () => {
     const created = await request('POST', '/users', { studentId: 'MBA301', name: 'MBA Student',
         program: 'MBA', semester: '3', class: 'MBA-Sem3', password: 'student-password' }, adminToken);
     assert.equal(created.status, 200);
+    assert.match(created.body.voterId, /^[A-Z0-9]{6}$/);
     assert.equal(created.body.program, 'MBA');
     assert.equal(created.body.semester, '3');
     assert.equal(created.body.password, undefined);

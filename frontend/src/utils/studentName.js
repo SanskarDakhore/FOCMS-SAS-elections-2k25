@@ -5,11 +5,20 @@ export const generateVoterId = (reservedIds = new Set()) => {
   if (!globalThis.crypto?.getRandomValues) {
     throw new Error('Secure random generation is unavailable in this browser.');
   }
-  let voterId;
+  const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+  let voterId = '';
   do {
-    const bytes = new Uint8Array(12);
-    globalThis.crypto.getRandomValues(bytes);
-    voterId = `VTR-${Array.from(bytes, byte => byte.toString(16).padStart(2, '0')).join('').toUpperCase()}`;
+    const chars = [];
+    while (chars.length < 6) {
+      const bytes = new Uint8Array(16);
+      globalThis.crypto.getRandomValues(bytes);
+      for (const byte of bytes) {
+        if (byte >= 252) continue;
+        chars.push(alphabet[byte % alphabet.length]);
+        if (chars.length === 6) break;
+      }
+    }
+    voterId = chars.join('');
   } while (reservedIds.has(voterId));
   reservedIds.add(voterId);
   return voterId;

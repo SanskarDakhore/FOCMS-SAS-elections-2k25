@@ -88,7 +88,7 @@ router.post('/', auth, async (req, res) => {
     if (typeof studentId !== 'string' || !studentId.trim() || typeof name !== 'string' || !name.trim() ||
         (password !== undefined && typeof password !== 'string') ||
         (requestedVoterId !== undefined &&
-            (typeof requestedVoterId !== 'string' || !/^VTR-[A-F0-9]{24}$/.test(requestedVoterId)))) {
+            (typeof requestedVoterId !== 'string' || !/^[A-Z0-9]{6}$/.test(requestedVoterId)))) {
         return res.status(400).json({ msg: 'Student ID, name, and a text password are required.' });
     }
 
