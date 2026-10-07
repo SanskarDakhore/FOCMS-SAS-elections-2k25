@@ -36,8 +36,11 @@ const StudentImportPreviewModal = ({
     const issues = [...(s._issues || [])];
     if (!s.studentId && !issues.includes('Student ID is required.')) issues.push('Missing Student ID');
     if (!s.name && !issues.includes('Name is required.')) issues.push('Missing Name');
-    const isDuplicate = existingStudentIds.has(String(s.studentId));
-    if (isDuplicate && !issues.includes('Already exists in system')) issues.push('Already exists in system');
+    const studentId = String(s.studentId ?? '').trim();
+    const duplicateInFile = issues.includes('Student ID is duplicated in this file.');
+    const duplicateInRegistry = studentId && existingStudentIds.has(studentId);
+    const isDuplicate = Boolean(duplicateInFile || duplicateInRegistry);
+    if (duplicateInRegistry && !issues.includes('Already exists in system')) issues.push('Already exists in system');
     return {
       ...s,
       _idx: idx,
@@ -54,8 +57,9 @@ const StudentImportPreviewModal = ({
     setSelected(new Set(
       students.flatMap((student, index) => {
         const hasIssues = (student._issues || []).length > 0 ||
-          !student.studentId || !student.name;
-        return !hasIssues && !existingStudentIds.has(String(student.studentId)) ? [index] : [];
+          !student.studentId || !student.name ||
+          existingStudentIds.has(String(student.studentId ?? '').trim());
+        return !hasIssues ? [index] : [];
       })
     ));
     setSearch('');

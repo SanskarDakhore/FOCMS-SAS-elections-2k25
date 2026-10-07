@@ -376,7 +376,7 @@ const AdminDashboard = () => {
       const registeredStudents = registeredUsers.filter(user => user.role === 'student');
       setStudents(registeredStudents);
       setImportPreviewExistingStudentIds(
-        new Set(registeredUsers.map(user => String(user.studentId)))
+        new Set(registeredStudents.map(student => String(student.studentId ?? '').trim()).filter(Boolean))
       );
 
       const data = await file.arrayBuffer();
