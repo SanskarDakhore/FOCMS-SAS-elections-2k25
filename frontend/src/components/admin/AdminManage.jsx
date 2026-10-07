@@ -24,8 +24,6 @@ const AdminManage = ({
     const [searchTerm, setSearchTerm] = useState('');
     const [program, setProgram] = useState('');
     const [semester, setSemester] = useState('');
-
-
     // Filter students
     const filteredStudents = students.filter(student => {
         const matchesSearch = [student.name, student.studentId, student.class, student.program]
@@ -168,9 +166,8 @@ const AdminManage = ({
                                 accept=".xlsx,.xls,.csv"
                                 className="absolute inset-0 opacity-0 cursor-pointer"
                                 onChange={(e) => {
-                                    const file = e.target.files[0];
+                                    const file = e.target.files?.[0];
                                     if (file) handleUploadStudents(file);
-                                    // Reset so the same file can be re-selected
                                     e.target.value = '';
                                 }}
                             />
@@ -293,6 +290,7 @@ const AdminManage = ({
                     </div>
                 </Card>
             </section>
+
         </div>
     );
 };

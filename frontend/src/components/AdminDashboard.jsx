@@ -50,6 +50,7 @@ const AdminDashboard = () => {
   // Import Preview State
   const [importPreviewOpen, setImportPreviewOpen] = useState(false);
   const [importPreviewStudents, setImportPreviewStudents] = useState([]);
+  const existingStudentIds = useMemo(() => new Set(students.map(student => String(student.studentId))), [students]);
 
   // --- Data Loading & Effects ---
 
@@ -57,8 +58,8 @@ const AdminDashboard = () => {
     loadData();
   }, []);
 
-  const loadData = async () => {
-    setLoading(true);
+  const loadData = async ({ silent = false } = {}) => {
+    if (!silent) setLoading(true);
     try {
       const [scheduleRes, positionsRes, candidatesRes, usersRes, votesRes, resultsRes, voteStatsRes, batchRes] = await Promise.allSettled([
         api.get('/settings/votingSchedule'),
@@ -101,7 +102,7 @@ const AdminDashboard = () => {
     } catch (error) {
       console.error("Error loading data:", error);
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   };
 
@@ -371,35 +372,44 @@ const AdminDashboard = () => {
       const data = await file.arrayBuffer();
       const workbook = XLSX.read(data);
       const sheet = workbook.Sheets[workbook.SheetNames[0]];
+      if (!sheet) throw new Error('The workbook does not contain a worksheet.');
 
       const raw = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
-      if (raw.length < 2) {
-        alert('The sheet appears to be empty.');
-        return;
-      }
+      if (raw.length < 2) throw new Error('The sheet appears to be empty.');
 
-      // Normalize headers: lowercase + trim so casing never matters
       const headers = raw[0].map(h => String(h).toLowerCase().trim());
-      const col = (row, name) => {
-        const idx = headers.indexOf(name);
-        return idx >= 0 ? String(row[idx] ?? '').trim() : '';
+      const col = (row, names) => {
+        const idx = names.map(name => headers.indexOf(name)).find(index => index >= 0);
+        return idx === undefined ? '' : String(row[idx] ?? '').trim();
       };
 
       const parsed = [];
+      const fileIds = new Set();
       for (let i = 1; i < raw.length; i++) {
         const row = raw[i];
-        const studentId = col(row, 'studentid') || col(row, 'student_id') || col(row, 'id');
-        const name = col(row, 'name');
-        // Skip completely blank rows
-        if (!studentId && !name) continue;
+        if (row.every(value => String(value ?? '').trim() === '')) continue;
 
-        const classVal = col(row, 'class');
-        const program = col(row, 'program') || (/^(BBA|MBA)/i.exec(classVal)?.[1]?.toUpperCase()) || '';
-        const semester = col(row, 'semester') || '1';
-        const rawPassword = col(row, 'password');
+        const studentId = col(row, ['studentid', 'student_id', 'id']);
+        const name = col(row, ['name']);
+        const classVal = col(row, ['class']);
+        const program = (col(row, ['program']) || (/^(BBA|MBA)/i.exec(classVal)?.[1] ?? '')).toUpperCase();
+        const semester = col(row, ['semester']) || '1';
+        const normalizedSemester = semester.replace(/^Semester\s+/i, '');
+        const rawPassword = col(row, ['password']);
         const password = rawPassword || generatePassword();
+        const issues = [];
 
+        if (!studentId) issues.push('Student ID is required.');
+        else if (fileIds.has(studentId)) issues.push('Student ID is duplicated in this file.');
+        if (studentId) fileIds.add(studentId);
+        if (!name) issues.push('Name is required.');
+        if (program && !['BBA', 'MBA'].includes(program)) issues.push(`Unsupported program "${program}".`);
+        if ((program === 'BBA' && !['1', '3', '5'].includes(normalizedSemester)) ||
+            (program === 'MBA' && !['1', '3'].includes(normalizedSemester))) {
+          issues.push(`${program} does not support semester ${normalizedSemester}.`);
+        }
         parsed.push({
+          _rowNumber: i + 1,
           studentId,
           name,
           class: classVal || (program ? `${program}-Sem${semester}` : ''),
@@ -407,19 +417,17 @@ const AdminDashboard = () => {
           semester,
           password,
           _autoPassword: !rawPassword,
+          _issues: issues,
         });
       }
 
-      if (parsed.length === 0) {
-        alert('No student rows found in the sheet.');
-        return;
-      }
+      if (parsed.length === 0) throw new Error('No student rows found in the sheet.');
 
       setImportPreviewStudents(parsed);
       setImportPreviewOpen(true);
     } catch (err) {
       console.error(err);
-      alert('Error reading file. Please check the format and try again.');
+      alert(err.message || 'Error reading file. Please check the format and try again.');
     }
   };
 
@@ -432,6 +440,7 @@ const AdminDashboard = () => {
     let count = 0;
     let skipped = 0;
     const errors = [];
+    const importResults = [];
 
     for (const s of selectedRows) {
       try {
@@ -445,19 +454,21 @@ const AdminDashboard = () => {
         });
         importedCredentials.push({ studentId: s.studentId, name: s.name, program: s.program, semester: s.semester, password: s.password });
         count++;
+        importResults.push({ index: s._idx, success: true });
       } catch (err) {
         const msg = err.response?.data?.msg || err.message || 'Unknown error';
         if (msg.toLowerCase().includes('already exists')) {
           skipped++;
+          importResults.push({ index: s._idx, success: false, reason: msg });
         } else {
           console.error(`${s.studentId}: ${msg}`);
           errors.push(`${s.studentId} (${s.name}): ${msg}`);
+          importResults.push({ index: s._idx, success: false, reason: msg });
         }
       }
     }
 
-    await loadData();
-    setImportPreviewOpen(false);
+    if (count > 0) await loadData({ silent: true });
 
     // Download credentials for auto-password students
     if (importedCredentials.length > 0) {
@@ -474,6 +485,7 @@ const AdminDashboard = () => {
       if (errors.length > 8) message += `\n…and ${errors.length - 8} more. See console.`;
     }
     alert(message);
+    return importResults;
   };
 
   const exportResults = () => {
@@ -625,7 +637,7 @@ const AdminDashboard = () => {
       <StudentImportPreviewModal
         isOpen={importPreviewOpen}
         students={importPreviewStudents}
-        existingStudentIds={new Set(students.map(s => String(s.studentId)))}
+        existingStudentIds={existingStudentIds}
         onClose={() => setImportPreviewOpen(false)}
         onConfirm={handleConfirmImport}
       />

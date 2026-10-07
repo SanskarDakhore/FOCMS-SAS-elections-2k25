@@ -29,33 +29,43 @@ const StudentImportPreviewModal = ({
   const [filterStatus, setFilterStatus] = useState('all');
   const [importing, setImporting] = useState(false);
   const [sortDir, setSortDir] = useState('asc');
+  const [importResults, setImportResults] = useState({});
 
   /* ── Tag each row ── */
   const tagged = useMemo(() => students.map((s, idx) => {
-    const issues = [];
-    if (!s.studentId) issues.push('Missing Student ID');
-    if (!s.name)      issues.push('Missing Name');
+    const issues = [...(s._issues || [])];
+    if (!s.studentId && !issues.includes('Student ID is required.')) issues.push('Missing Student ID');
+    if (!s.name && !issues.includes('Name is required.')) issues.push('Missing Name');
     const isDuplicate = existingStudentIds.has(String(s.studentId));
-    if (isDuplicate)  issues.push('Already exists in system');
+    if (isDuplicate && !issues.includes('Already exists in system')) issues.push('Already exists in system');
     return {
       ...s,
       _idx: idx,
-      _eligible: issues.length === 0,
+      _eligible: issues.every(issue => issue === 'Already exists in system'),
       _duplicate: isDuplicate,
       _issues: issues,
+      _importResult: importResults[idx],
     };
-  }), [students, existingStudentIds]);
+  }), [students, existingStudentIds, importResults]);
 
   /* ── Reset selection when data/open changes ── */
   React.useEffect(() => {
     if (!isOpen) return;
     setSelected(new Set(
-      tagged.filter(s => s._eligible && !s._duplicate).map(s => s._idx)
+      students.flatMap((student, index) => {
+        const hasIssues = (student._issues || []).length > 0 ||
+          !student.studentId || !student.name;
+        return !hasIssues && !existingStudentIds.has(String(student.studentId)) ? [index] : [];
+      })
     ));
     setSearch('');
     setFilterStatus('all');
     setImporting(false);
-  }, [isOpen, students]);
+  }, [isOpen, students, existingStudentIds]);
+
+  React.useEffect(() => {
+    if (!isOpen) setImportResults({});
+  }, [isOpen]);
 
   /* ── Counts ── */
   const counts = useMemo(() => ({
@@ -64,6 +74,8 @@ const StudentImportPreviewModal = ({
     duplicate: tagged.filter(s => s._duplicate).length,
     invalid:   tagged.filter(s => !s._eligible).length,
     selected:  selected.size,
+    imported:  tagged.filter(s => s._importResult?.success).length,
+    failed:    tagged.filter(s => s._importResult && !s._importResult.success).length,
   }), [tagged, selected]);
 
   /* ── Filtered + sorted view ── */
@@ -114,7 +126,13 @@ const StudentImportPreviewModal = ({
     if (!toImport.length) return;
     setImporting(true);
     try {
-      await onConfirm(toImport);
+      const results = await onConfirm(toImport);
+      if (results) {
+        setImportResults(previous => ({
+          ...previous,
+          ...Object.fromEntries(results.map(result => [result.index, result])),
+        }));
+      }
     } finally {
       setImporting(false);
     }
@@ -124,6 +142,18 @@ const StudentImportPreviewModal = ({
 
   /* ── Status badge ── */
   const StatusBadge = ({ row }) => {
+    if (row._importResult?.success)
+      return (
+        <span className="inline-flex items-center gap-1 rounded-full border border-blue-400/40 bg-blue-500/15 px-2 py-0.5 text-xs font-semibold text-blue-300">
+          <CheckCircle size={11} /> Imported
+        </span>
+      );
+    if (row._importResult)
+      return (
+        <span className="inline-flex items-center gap-1 rounded-full border border-amber-400/40 bg-amber-500/15 px-2 py-0.5 text-xs font-semibold text-amber-300">
+          <AlertTriangle size={11} /> Import failed
+        </span>
+      );
     if (!row._eligible)
       return (
         <span style={{ background: 'rgba(239,68,68,0.15)', borderColor: 'rgba(248,113,113,0.4)' }}
@@ -288,7 +318,7 @@ const StudentImportPreviewModal = ({
                 </tr>
               ) : (
                 visible.map(row => {
-                  const canSelect = row._eligible && !row._duplicate;
+                  const canSelect = row._eligible && !row._duplicate && !row._importResult?.success;
                   const isSel = selected.has(row._idx);
                   return (
                     <tr
@@ -340,7 +370,10 @@ const StudentImportPreviewModal = ({
                       <td className="py-3 px-3 text-center">
                         <StatusBadge row={row} />
                         {row._issues.length > 0 && (
-                          <p className="text-xs text-red-400 mt-1 leading-tight">{row._issues.filter(i => !i.includes('Already exists')).join(', ')}</p>
+                          <p className="text-xs text-red-400 mt-1 leading-tight">{row._issues.join(', ')}</p>
+                        )}
+                        {row._importResult?.reason && (
+                          <p className="mt-1 text-xs leading-tight text-amber-300">{row._importResult.reason}</p>
                         )}
                       </td>
                     </tr>
@@ -368,6 +401,12 @@ const StudentImportPreviewModal = ({
               <span className="ml-2 text-red-400">
                 · {counts.invalid} invalid row{counts.invalid > 1 ? 's' : ''} excluded
               </span>
+            )}
+            {counts.imported > 0 && (
+              <span className="ml-2 text-blue-300">· {counts.imported} imported</span>
+            )}
+            {counts.failed > 0 && (
+              <span className="ml-2 text-amber-300">· {counts.failed} failed</span>
             )}
           </p>
 
