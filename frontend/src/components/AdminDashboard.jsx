@@ -50,7 +50,7 @@ const AdminDashboard = () => {
   // Import Preview State
   const [importPreviewOpen, setImportPreviewOpen] = useState(false);
   const [importPreviewStudents, setImportPreviewStudents] = useState([]);
-  const existingStudentIds = useMemo(() => new Set(students.map(student => String(student.studentId))), [students]);
+  const [importPreviewExistingStudentIds, setImportPreviewExistingStudentIds] = useState(new Set());
 
   // --- Data Loading & Effects ---
 
@@ -364,11 +364,21 @@ const AdminDashboard = () => {
   };
 
   /**
-   * Step 1 – Parse the uploaded file and open the preview modal.
-   * No API calls are made here.
+   * Refresh the registry, parse the uploaded file, and open its preview.
    */
   const handleUploadStudents = async (file) => {
     try {
+      const usersResponse = await api.get('/users');
+      if (!Array.isArray(usersResponse.data)) {
+        throw new Error('Could not verify registered students. Please refresh and try again.');
+      }
+      const registeredUsers = usersResponse.data;
+      const registeredStudents = registeredUsers.filter(user => user.role === 'student');
+      setStudents(registeredStudents);
+      setImportPreviewExistingStudentIds(
+        new Set(registeredUsers.map(user => String(user.studentId)))
+      );
+
       const data = await file.arrayBuffer();
       const workbook = XLSX.read(data);
       const sheet = workbook.Sheets[workbook.SheetNames[0]];
@@ -427,7 +437,7 @@ const AdminDashboard = () => {
       setImportPreviewOpen(true);
     } catch (err) {
       console.error(err);
-      alert(err.message || 'Error reading file. Please check the format and try again.');
+      alert(err.response?.data?.msg || err.message || 'Could not refresh registered students or read the file. Please try again.');
     }
   };
 
@@ -637,7 +647,7 @@ const AdminDashboard = () => {
       <StudentImportPreviewModal
         isOpen={importPreviewOpen}
         students={importPreviewStudents}
-        existingStudentIds={existingStudentIds}
+        existingStudentIds={importPreviewExistingStudentIds}
         onClose={() => setImportPreviewOpen(false)}
         onConfirm={handleConfirmImport}
       />
