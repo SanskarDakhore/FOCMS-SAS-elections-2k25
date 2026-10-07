@@ -17,7 +17,8 @@ const AdminManage = ({
     handleDeleteAllStudents,
     handleResetAllPasswords,
     exportCredentials,
-    exportStudentsBySemester,
+    recentlyImportedCredentials,
+    exportImportedCredentials,
     handleUploadStudents,
     loadData
 }) => {
@@ -32,6 +33,10 @@ const AdminManage = ({
         const matchesSemester = !semester || String(student.semester).replace('Semester ', '') === semester;
         return matchesSearch && matchesProgram && matchesSemester;
     });
+    const filteredVoterIds = new Set(filteredStudents.map(student => student.voterId));
+    const hasFilteredImportedCredentials = recentlyImportedCredentials.some(
+        credential => filteredVoterIds.has(credential.voterId)
+    );
 
     return (
         <div className="space-y-10 animate-fade-in">
@@ -204,7 +209,15 @@ const AdminManage = ({
                                 <option value="">All semesters</option><option value="1">Semester 1</option><option value="3">Semester 3</option>
                                 {program !== 'MBA' && <option value="5">Semester 5</option>}
                             </select>
-                            <Button variant="secondary" onClick={() => exportStudentsBySemester(filteredStudents)} icon={Download}>Export Filtered</Button>
+                            <Button
+                                variant="secondary"
+                                onClick={() => exportImportedCredentials(filteredStudents)}
+                                disabled={!hasFilteredImportedCredentials}
+                                title="Download credentials for recently imported students matching the filters"
+                                icon={Download}
+                            >
+                                Export Filtered Credentials
+                            </Button>
                             <Button
                                 variant="danger"
                                 onClick={handleDeleteAllStudents}

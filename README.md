@@ -39,7 +39,7 @@ The CSV import template can be downloaded from **Student Registry → Download T
 
 Student imports allow the same Student ID when the full names differ. Duplicate detection uses the normalized full name (Unicode compatibility normalization, case-insensitive, with repeated whitespace collapsed), and the backend enforces the same rule. Each student receives a unique, six-character alphanumeric Voter ID visible in the import preview and Student Registry, plus a password; the import credentials workbook contains both alongside Student ID, name, program, semester, and class. Students sign in with Voter ID and password. Student account and vote ownership use an internal account ID, so reused Student IDs do not merge accounts.
 
-Blank import passwords retain the previous portal's `password123` default. Set individual passwords in the import or use **Reset Passwords** to generate unique credentials. Stored passwords are hashed and cannot be exported; **Export Registry** and **Export Filtered** export student details, while **Reset Passwords** downloads the newly generated passwords once.
+Blank import passwords retain the previous portal's `password123` default. Set individual passwords in the import or use **Reset Passwords** to generate unique credentials. Stored passwords are hashed and cannot be recovered. The import credentials workbook downloads after import, and **Export Filtered Credentials** can re-download credentials for recently imported students matching the current filters while the admin page remains open. **Export Registry** exports student details; **Reset Passwords** downloads newly generated passwords once.
 
 ## Migration and deployment
 

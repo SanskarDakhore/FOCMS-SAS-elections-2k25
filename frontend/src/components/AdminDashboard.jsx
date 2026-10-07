@@ -52,6 +52,7 @@ const AdminDashboard = () => {
   const [importPreviewOpen, setImportPreviewOpen] = useState(false);
   const [importPreviewStudents, setImportPreviewStudents] = useState([]);
   const [importPreviewExistingStudentNames, setImportPreviewExistingStudentNames] = useState(new Set());
+  const [recentlyImportedCredentials, setRecentlyImportedCredentials] = useState([]);
 
   // --- Data Loading & Effects ---
 
@@ -280,6 +281,9 @@ const AdminDashboard = () => {
     if (!editItem) return;
     try {
       await api.put(`/users/${editItem._id}`, formData);
+      setRecentlyImportedCredentials(previous => previous.filter(
+        credential => credential.voterId !== editItem.voterId
+      ));
       setShowModal(false);
       loadData();
     } catch (error) {
@@ -292,6 +296,12 @@ const AdminDashboard = () => {
     if (!confirm('Are you sure? This cannot be undone.')) return;
     try {
       await api.delete(`/users/${userId}`);
+      const deletedStudent = students.find(student => student._id === userId);
+      if (deletedStudent) {
+        setRecentlyImportedCredentials(previous => previous.filter(
+          credential => credential.voterId !== deletedStudent.voterId
+        ));
+      }
       loadData();
     } catch (error) {
       console.error("Error deleting student:", error);
@@ -314,6 +324,7 @@ const AdminDashboard = () => {
     if (!confirm('Delete all students and their votes? Administrator accounts will be retained.')) return;
     try {
       await api.delete('/users/bulk/all');
+      setRecentlyImportedCredentials([]);
       await loadData();
     } catch (error) { alert(error.response?.data?.msg || 'Unable to delete students.'); }
   };
@@ -322,6 +333,7 @@ const AdminDashboard = () => {
     if (!confirm('Replace every student password and download the new credentials?')) return;
     try {
       const response = await api.post('/users/bulk/reset-passwords');
+      setRecentlyImportedCredentials([]);
       const workbook = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(response.data), 'Credentials');
       XLSX.writeFile(workbook, 'focms_student_credentials.xlsx');
@@ -505,8 +517,8 @@ const AdminDashboard = () => {
 
     if (count > 0) await loadData({ silent: true });
 
-    // Download credentials for auto-password students
     if (importedCredentials.length > 0) {
+      setRecentlyImportedCredentials(previous => [...previous, ...importedCredentials]);
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(importedCredentials), 'Credentials');
       XLSX.writeFile(wb, 'imported_student_credentials.xlsx');
@@ -549,7 +561,17 @@ const AdminDashboard = () => {
     XLSX.writeFile(workbook, 'focms_student_registry.xlsx');
   };
 
-  const exportStudentsBySemester = (selectedStudents) => exportCredentials(selectedStudents);
+  const exportImportedCredentials = (selectedStudents) => {
+    const selectedVoterIds = new Set(selectedStudents.map(student => student.voterId));
+    const rows = recentlyImportedCredentials.filter(credential => selectedVoterIds.has(credential.voterId));
+    if (rows.length === 0) {
+      alert('No recently imported credentials match the current filters. Passwords for existing students cannot be recovered.');
+      return;
+    }
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(rows), 'Credentials');
+    XLSX.writeFile(workbook, 'filtered_student_credentials.xlsx');
+  };
 
   // --- Render ---
   return (
@@ -613,7 +635,8 @@ const AdminDashboard = () => {
                 handleDeleteAllStudents={handleDeleteAllStudents}
                 handleResetAllPasswords={handleResetAllPasswords}
                 exportCredentials={exportCredentials}
-                exportStudentsBySemester={exportStudentsBySemester}
+                recentlyImportedCredentials={recentlyImportedCredentials}
+                exportImportedCredentials={exportImportedCredentials}
                 handleUploadStudents={handleUploadStudents}
                 loadData={loadData}
               />
