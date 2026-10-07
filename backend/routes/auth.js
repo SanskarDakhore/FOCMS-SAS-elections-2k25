@@ -11,22 +11,26 @@ const router = express.Router();
 const loginRateLimit = rateLimit({
     windowMs: 15 * 60 * 1000,
     limit: 10,
-    keyGenerator: req => String(req.body?.studentId || 'unknown').trim().toLowerCase(),
+    keyGenerator: req => String(req.body?.voterId || req.body?.studentId || 'unknown').trim().toLowerCase(),
     standardHeaders: 'draft-8',
     legacyHeaders: false,
     message: { message: 'Too many login attempts for this account. Try again in 15 minutes.' }
 });
 
 router.post('/login', loginRateLimit, async (req, res) => {
-    const { studentId, password } = req.body;
-    if (typeof studentId !== 'string' || typeof password !== 'string' || !password) {
-        return res.status(400).json({ message: 'Student ID and password are required' });
+    const { voterId, studentId, password } = req.body;
+    const isStudentLogin = typeof voterId === 'string' && voterId.trim();
+    const loginId = isStudentLogin ? voterId.trim().toUpperCase() : studentId;
+    if (typeof loginId !== 'string' || !loginId.trim() || typeof password !== 'string' || !password) {
+        return res.status(400).json({ message: 'Voter ID (students) or admin ID, and password are required' });
     }
     try {
-        const id = studentId.trim();
-        const user = await User.findOne({ $or: [
-            { studentId: id }, { role: 'admin', email: id.toLowerCase() },
-        ] }).select('+passwordSalt');
+        const id = loginId.trim();
+        const user = isStudentLogin
+            ? await User.findOne({ role: 'student', voterId: id }).select('+passwordSalt')
+            : await User.findOne({ role: 'admin', $or: [
+                { studentId: id }, { email: id.toLowerCase() },
+            ] }).select('+passwordSalt');
         if (!user || user.disabled) {
             return res.status(400).json({ message: 'Invalid credentials' });
         }
@@ -50,7 +54,7 @@ router.post('/login', loginRateLimit, async (req, res) => {
         const profile = user.toObject();
         delete profile.password;
         delete profile.passwordSalt;
-        const token = jwt.sign({ user: { id: user.studentId, role: user.role } }, getJwtSecret(), {
+        const token = jwt.sign({ user: { id: String(user._id), role: user.role } }, getJwtSecret(), {
             expiresIn: '4h', algorithm: 'HS256',
         });
         res.json({ token, user: profile });
@@ -61,7 +65,7 @@ router.post('/login', loginRateLimit, async (req, res) => {
 });
 
 router.get('/user', auth, async (req, res) => {
-    const user = await User.findOne({ studentId: req.user.id }).select('-password');
+    const user = await User.findById(req.user.id).select('-password');
     res.json(user);
 });
 

@@ -16,6 +16,7 @@ import Vote from '../models/Vote.js';
 import Setting from '../models/Settings.js';
 import VotingBatch from '../models/VotingBatch.js';
 import { importLegacyData } from '../lib/importLegacyData.js';
+import { migrateStudentIdentity } from '../lib/migrateStudentIdentity.js';
 
 let mongo;
 let dataDir;
@@ -26,6 +27,8 @@ let studentToken;
 let secondStudentToken;
 let thirdStudentToken;
 let excludedStudentToken;
+let studentAccountIds;
+let studentVoterIds;
 let ballot;
 let initialSchedule;
 
@@ -83,22 +86,38 @@ before(async () => {
         { studentId: 'BBA103', name: 'Third Student', role: 'student', password, program: 'BBA', semester: '1', class: 'BBA-Sem1' },
         { studentId: 'BBA104', name: 'Unassigned Student', role: 'student', password, program: 'BBA', semester: '1', class: 'BBA-Sem1' },
     ]);
+    const students = await User.find({ role: 'student' }).select('_id studentId voterId').lean();
+    studentAccountIds = Object.fromEntries(students
+        .map(student => [student.studentId, String(student._id)]));
+    studentVoterIds = Object.fromEntries(students.map(student => [student.studentId, student.voterId]));
     const positions = await Position.create([{ name: 'President' }, { name: 'Secretary' }]);
     const candidates = await Candidate.create(positions.map(position => ({ name: position.name + ' Candidate',
         class: 'BBA-Sem1', positionId: position._id })));
     ballot = positions.map((position, index) => ({ positionId: String(position._id), candidateId: String(candidates[index]._id) }));
+    await User.collection.dropIndex('studentId_1');
+    await User.collection.createIndex({ studentId: 1 }, { unique: true, name: 'studentId_1' });
+    await Vote.collection.insertOne({
+        userId: 'BBA101',
+        positionId: positions[0]._id,
+        candidateId: candidates[0]._id,
+        studentClass: 'BBA-Sem1',
+        timestamp: new Date()
+    });
+    await migrateStudentIdentity();
+    assert.equal(await Vote.countDocuments({ userId: studentAccountIds.BBA101 }), 1);
+    await Vote.deleteOne({ userId: studentAccountIds.BBA101 });
     initialSchedule = { votingStart: new Date(Date.now() - 60000).toISOString(),
         votingEnd: new Date(Date.now() + 3600000).toISOString(), isActive: true };
     await Setting.create({ key: 'votingSchedule', value: initialSchedule });
     adminToken = (await request('POST', '/auth/login', { studentId: 'focms-test-admin', password: 'integration-password' })).body.token;
-    studentToken = (await request('POST', '/auth/login', { studentId: 'BBA101', password: 'integration-password' })).body.token;
-    secondStudentToken = (await request('POST', '/auth/login', { studentId: 'BBA102', password: 'integration-password' })).body.token;
-    thirdStudentToken = (await request('POST', '/auth/login', { studentId: 'BBA103', password: 'integration-password' })).body.token;
-    excludedStudentToken = (await request('POST', '/auth/login', { studentId: 'BBA104', password: 'integration-password' })).body.token;
+    studentToken = (await request('POST', '/auth/login', { voterId: studentVoterIds.BBA101, password: 'integration-password' })).body.token;
+    secondStudentToken = (await request('POST', '/auth/login', { voterId: studentVoterIds.BBA102, password: 'integration-password' })).body.token;
+    thirdStudentToken = (await request('POST', '/auth/login', { voterId: studentVoterIds.BBA103, password: 'integration-password' })).body.token;
+    excludedStudentToken = (await request('POST', '/auth/login', { voterId: studentVoterIds.BBA104, password: 'integration-password' })).body.token;
     assert.ok(adminToken);
     assert.ok(studentToken);
     assert.equal((await request('POST', '/votes/batch', {
-        className: 'BBA-Sem1', studentIds: ['BBA101', 'BBA102', 'BBA103']
+        className: 'BBA-Sem1', userIds: [studentAccountIds.BBA101, studentAccountIds.BBA102, studentAccountIds.BBA103]
     }, adminToken)).status, 200);
 }, { timeout: 60000 });
 
@@ -192,6 +211,34 @@ test('CORS allows configured env origins and rejects unrelated domains', async (
     assert.equal(noEnvPreflight.headers.get('access-control-allow-origin'), null);
 });
 
+test('student accounts with repeated IDs remain distinct and duplicate normalized names are rejected', async () => {
+    const create = await request('POST', '/users', {
+        studentId: 'BBA101', name: 'Another Person', password: 'integration-password',
+        program: 'BBA', semester: '1', class: 'BBA-Sem1'
+    }, adminToken);
+    assert.equal(create.status, 200);
+    assert.notEqual(String(create.body._id), studentAccountIds.BBA101);
+    assert.ok(create.body.voterId);
+    assert.notEqual(create.body.voterId, studentVoterIds.BBA101);
+
+    const loginWithoutVoterId = await request('POST', '/auth/login', {
+        studentId: 'BBA101', password: 'integration-password'
+    });
+    assert.equal(loginWithoutVoterId.status, 400);
+
+    const login = await request('POST', '/auth/login', {
+        voterId: create.body.voterId.toLowerCase(), password: 'integration-password'
+    });
+    assert.equal(login.status, 200);
+    const profile = await request('GET', '/auth/user', undefined, login.body.token);
+    assert.equal(profile.body._id, String(create.body._id));
+
+    const duplicateName = await request('POST', '/users', {
+        studentId: 'BBA999', name: 'another person', password: 'integration-password'
+    }, adminToken);
+    assert.equal(duplicateName.status, 409);
+});
+
 test('FOCMS BBA/MBA fields survive student create and edit; hashes are never returned', async () => {
     const created = await request('POST', '/users', { studentId: 'MBA301', name: 'MBA Student',
         program: 'MBA', semester: '3', class: 'MBA-Sem3', password: 'student-password' }, adminToken);
@@ -199,7 +246,7 @@ test('FOCMS BBA/MBA fields survive student create and edit; hashes are never ret
     assert.equal(created.body.program, 'MBA');
     assert.equal(created.body.semester, '3');
     assert.equal(created.body.password, undefined);
-    const edited = await request('PUT', '/users/MBA301', { name: 'Updated MBA', program: 'MBA', semester: '1', class: 'MBA-Sem1' }, adminToken);
+    const edited = await request('PUT', `/users/${created.body._id}`, { name: 'Updated MBA', program: 'MBA', semester: '1', class: 'MBA-Sem1' }, adminToken);
     assert.equal(edited.body.semester, '1');
     assert.equal((await request('POST', '/users', { studentId: 'bad-mba', name: 'Bad', program: 'MBA', semester: '5' }, adminToken)).status, 400);
     assert.equal((await request('DELETE', '/users/focms-test-admin', undefined, adminToken)).status, 404);
@@ -235,13 +282,15 @@ test('concurrent submissions record one complete ballot, admin results count it,
     const submissions = await Promise.all([request('POST', '/votes', ballot, studentToken),
         request('POST', '/votes', ballot, studentToken)]);
     assert.deepEqual(submissions.map(response => response.status).sort(), [200, 400]);
-    assert.equal(await Vote.countDocuments({ userId: 'BBA101' }), 2);
+    assert.equal(await Vote.countDocuments({ userId: studentAccountIds.BBA101 }), 2);
     const results = await request('GET', '/votes/results', undefined, adminToken);
     assert.equal(results.body.length, 2);
     assert.ok(results.body.every(result => result.totalVotes === 1));
-    assert.equal((await request('POST', '/auth/login', { studentId: 'BBA101', password: 'integration-password' })).status, 403);
-    assert.equal((await request('DELETE', '/users/BBA101/votes', undefined, adminToken)).status, 200);
-    assert.equal(await Vote.countDocuments({ userId: 'BBA101' }), 0);
+    assert.equal((await request('POST', '/auth/login', {
+        voterId: studentVoterIds.BBA101, password: 'integration-password'
+    })).status, 403);
+    assert.equal((await request('DELETE', `/users/${studentAccountIds.BBA101}/votes`, undefined, adminToken)).status, 200);
+    assert.equal(await Vote.countDocuments({ userId: studentAccountIds.BBA101 }), 0);
     assert.equal((await request('POST', '/votes', ballot, studentToken)).status, 200);
 });
 
@@ -258,12 +307,12 @@ test('class batches enforce capacity and cooldown, then admit missed unvoted stu
     assert.equal(closed.status, 200);
     assert.ok(new Date(closed.body.cooldownUntil).getTime() > Date.now());
     assert.equal((await request('POST', '/votes/batch', {
-        className: 'BBA-Sem1', studentIds: ['BBA102', 'BBA103']
+        className: 'BBA-Sem1', userIds: [studentAccountIds.BBA102, studentAccountIds.BBA103]
     }, adminToken)).status, 429);
 
     await VotingBatch.updateOne({ _id: 'current' }, { $set: { cooldownUntil: new Date(Date.now() - 1) } });
     assert.equal((await request('POST', '/votes/batch', {
-        className: 'BBA-Sem1', studentIds: ['BBA102', 'BBA103']
+        className: 'BBA-Sem1', userIds: [studentAccountIds.BBA102, studentAccountIds.BBA103]
     }, adminToken)).status, 200);
     assert.equal((await request('GET', '/votes/batch/status', undefined, secondStudentToken)).body.allowed, true);
     assert.equal((await request('GET', '/votes/batch/status', undefined, excludedStudentToken)).body.allowed, false);
@@ -274,7 +323,7 @@ test('class batches enforce capacity and cooldown, then admit missed unvoted stu
     ]);
     assert.deepEqual(submissions.map(response => response.status), [200, 200]);
     const batch = await request('GET', '/votes/batch', undefined, adminToken);
-    assert.equal(batch.body.status, 'cooldown');
+    assert.equal(batch.body.status, 'cooldown', JSON.stringify(batch.body));
     assert.equal(batch.body.remainingCount, 0);
 });
 
@@ -283,7 +332,9 @@ test('bulk reset issues usable new credentials; bulk delete preserves admin acco
     assert.equal(reset.status, 200);
     const student = reset.body.find(item => item.studentId === 'MBA301');
     assert.ok(student.password);
-    assert.equal((await request('POST', '/auth/login', { studentId: student.studentId, password: student.password })).status, 200);
+    assert.equal((await request('POST', '/auth/login', {
+        voterId: student.voterId, password: student.password
+    })).status, 200);
     assert.equal((await request('DELETE', '/users/bulk/all', undefined, adminToken)).status, 200);
     assert.equal(await User.countDocuments({ role: 'student' }), 0);
     assert.equal(await User.countDocuments({ role: 'admin' }), 1);

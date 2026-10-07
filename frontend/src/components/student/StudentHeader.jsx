@@ -27,7 +27,7 @@ const StudentHeader = ({ userProfile, onLogout }) => {
                         <div className="flex items-center gap-4">
                             <div className="text-right hidden sm:block">
                                 <p className="text-sm font-medium text-white">{userProfile?.name}</p>
-                                <p className="text-xs text-gray-400">{userProfile?.studentId}</p>
+                                <p className="text-xs text-gray-400">Voter ID: {userProfile?.voterId}</p>
                             </div>
                             <button
                                 onClick={onLogout}

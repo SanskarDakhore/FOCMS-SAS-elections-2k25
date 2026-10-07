@@ -238,7 +238,7 @@ const AdminManage = ({
                             </thead>
                             <tbody className="divide-y divide-white/5 text-sm">
                                 {filteredStudents.map(student => (
-                                    <tr key={student.studentId} className="hover:bg-white/5 transition-colors text-gray-300">
+                                    <tr key={student._id} className="hover:bg-white/5 transition-colors text-gray-300">
                                         <td className="p-4 font-medium text-white">{student.studentId}</td>
                                         <td className="p-4">{student.name}</td>
                                         <td className="p-4">{student.class || student.program || '-'}</td>
@@ -261,7 +261,7 @@ const AdminManage = ({
                                             </button>
                                             {student.hasVoted && (
                                                 <button
-                                                    onClick={() => handleDeleteStudentVotes(student.studentId)}
+                                                    onClick={() => handleDeleteStudentVotes(student._id)}
                                                     className="p-1.5 rounded hover:bg-white/10 text-orange-400 transition-colors"
                                                     title="Reset Vote"
                                                 >
@@ -269,7 +269,7 @@ const AdminManage = ({
                                                 </button>
                                             )}
                                             <button
-                                                onClick={() => handleDeleteStudent(student.studentId)}
+                                                onClick={() => handleDeleteStudent(student._id)}
                                                 className="p-1.5 rounded hover:bg-white/10 text-red-400 transition-colors"
                                                 disabled={student.hasVoted}
                                             >

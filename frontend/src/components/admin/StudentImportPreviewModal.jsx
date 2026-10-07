@@ -3,6 +3,7 @@ import {
   X, Upload, CheckCircle, XCircle, AlertTriangle,
   Users, Search, ChevronDown, ChevronUp, Info
 } from 'lucide-react';
+import { normalizeStudentName } from '../../utils/studentName';
 
 /**
  * StudentImportPreviewModal
@@ -15,14 +16,14 @@ import {
  *  students          - Array<{ studentId, name, program, semester, class, password, _autoPassword }>
  *  onClose           - () => void
  *  onConfirm         - (selected: Array) => Promise<void>
- *  existingStudentIds - Set<string>  IDs already in the system
+ *  existingStudentNames - Set<string>  normalized names already in the system
  */
 const StudentImportPreviewModal = ({
   isOpen,
   students = [],
   onClose,
   onConfirm,
-  existingStudentIds = new Set(),
+  existingStudentNames = new Set(),
 }) => {
   const [selected, setSelected] = useState(() => new Set());
   const [search, setSearch] = useState('');
@@ -36,20 +37,26 @@ const StudentImportPreviewModal = ({
     const issues = [...(s._issues || [])];
     if (!s.studentId && !issues.includes('Student ID is required.')) issues.push('Missing Student ID');
     if (!s.name && !issues.includes('Name is required.')) issues.push('Missing Name');
-    const studentId = String(s.studentId ?? '').trim();
-    const duplicateInFile = issues.includes('Student ID is duplicated in this file.');
-    const duplicateInRegistry = studentId && existingStudentIds.has(studentId);
+    const nameKey = normalizeStudentName(s.name);
+    const duplicateInFile = issues.includes('Student name and surname are duplicated in this file.');
+    const duplicateInRegistry = nameKey && existingStudentNames.has(nameKey);
     const isDuplicate = Boolean(duplicateInFile || duplicateInRegistry);
-    if (duplicateInRegistry && !issues.includes('Already exists in system')) issues.push('Already exists in system');
+    if (duplicateInRegistry && !issues.includes('Same name and surname already exists in system.')) {
+      issues.push('Same name and surname already exists in system.');
+    }
+    const duplicateReasons = new Set([
+      'Student name and surname are duplicated in this file.',
+      'Same name and surname already exists in system.',
+    ]);
     return {
       ...s,
       _idx: idx,
-      _eligible: issues.every(issue => issue === 'Already exists in system'),
+      _eligible: issues.every(issue => duplicateReasons.has(issue)),
       _duplicate: isDuplicate,
       _issues: issues,
       _importResult: importResults[idx],
     };
-  }), [students, existingStudentIds, importResults]);
+  }), [students, existingStudentNames, importResults]);
 
   /* ── Reset selection when data/open changes ── */
   React.useEffect(() => {
@@ -58,14 +65,15 @@ const StudentImportPreviewModal = ({
       students.flatMap((student, index) => {
         const hasIssues = (student._issues || []).length > 0 ||
           !student.studentId || !student.name ||
-          existingStudentIds.has(String(student.studentId ?? '').trim());
+          existingStudentNames.has(normalizeStudentName(student.name)) ||
+          (student._issues || []).includes('Student name and surname are duplicated in this file.');
         return !hasIssues ? [index] : [];
       })
     ));
     setSearch('');
     setFilterStatus('all');
     setImporting(false);
-  }, [isOpen, students, existingStudentIds]);
+  }, [isOpen, students, existingStudentNames]);
 
   React.useEffect(() => {
     if (!isOpen) setImportResults({});

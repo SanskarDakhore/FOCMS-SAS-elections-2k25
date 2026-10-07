@@ -33,7 +33,7 @@ const AdminSchedule = ({
     loadData
 }) => {
     const [selectedClass, setSelectedClass] = React.useState('');
-    const [selectedStudentIds, setSelectedStudentIds] = React.useState([]);
+    const [selectedUserIds, setSelectedUserIds] = React.useState([]);
     const [batchBusy, setBatchBusy] = React.useState(false);
     const [batchError, setBatchError] = React.useState('');
     const [clockNow, setClockNow] = React.useState(Date.now());
@@ -76,8 +76,8 @@ const AdminSchedule = ({
         setBatchBusy(true);
         setBatchError('');
         try {
-            await onOpenVotingBatch({ className: selectedClass, studentIds: selectedStudentIds });
-            setSelectedStudentIds([]);
+            await onOpenVotingBatch({ className: selectedClass, userIds: selectedUserIds });
+            setSelectedUserIds([]);
         } catch (error) {
             setBatchError(error.response?.data?.msg || 'Unable to open the class batch.');
         } finally {
@@ -360,8 +360,8 @@ const AdminSchedule = ({
                                         onChange={event => {
                                             const nextClass = event.target.value;
                                             setSelectedClass(nextClass);
-                                            setSelectedStudentIds(pendingStudents.filter(student => student.class === nextClass)
-                                                .map(student => student.studentId));
+                                            setSelectedUserIds(pendingStudents.filter(student => student.class === nextClass)
+                                                .map(student => student._id));
                                             setBatchError('');
                                         }}
                                         className="glass-input mt-2 w-full rounded-lg px-3 py-2"
@@ -374,22 +374,22 @@ const AdminSchedule = ({
                                 {selectedClass && (
                                     <div>
                                         <div className="mb-2 flex items-center justify-between text-xs text-gray-400">
-                                            <span>{selectedStudentIds.length} of {classStudents.length} unvoted students selected</span>
+                                            <span>{selectedUserIds.length} of {classStudents.length} unvoted students selected</span>
                                             <button
                                                 type="button"
-                                                onClick={() => setSelectedStudentIds(classStudents.map(student => student.studentId))}
+                                                onClick={() => setSelectedUserIds(classStudents.map(student => student._id))}
                                                 className="text-indigo-300 hover:text-indigo-200"
                                             >Select all</button>
                                         </div>
                                         <div className="max-h-52 space-y-1 overflow-y-auto rounded-lg border border-white/10 p-2">
                                             {classStudents.map(student => (
-                                                <label key={student.studentId} className="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-sm text-gray-300 hover:bg-white/5">
+                                                <label key={student._id} className="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-sm text-gray-300 hover:bg-white/5">
                                                     <input
                                                         type="checkbox"
-                                                        checked={selectedStudentIds.includes(student.studentId)}
-                                                        onChange={event => setSelectedStudentIds(current => event.target.checked
-                                                            ? [...current, student.studentId]
-                                                            : current.filter(id => id !== student.studentId))}
+                                                        checked={selectedUserIds.includes(student._id)}
+                                                        onChange={event => setSelectedUserIds(current => event.target.checked
+                                                            ? [...current, student._id]
+                                                            : current.filter(id => id !== student._id))}
                                                         className="h-4 w-4 rounded border-gray-600 bg-gray-700 text-indigo-500"
                                                     />
                                                     <span>{student.name}</span>
@@ -403,12 +403,12 @@ const AdminSchedule = ({
                                 {batchError && <p role="alert" className="text-sm text-red-300">{batchError}</p>}
                                 <Button
                                     onClick={handleOpenBatch}
-                                    disabled={batchBusy || !votingSchedule.isActive || !selectedClass || selectedStudentIds.length === 0 || cooldownSeconds > 0}
+                                    disabled={batchBusy || !votingSchedule.isActive || !selectedClass || selectedUserIds.length === 0 || cooldownSeconds > 0}
                                     variant="success"
                                     icon={Play}
                                     className="w-full justify-center"
                                 >
-                                    {batchBusy ? 'Opening...' : `Open Batch${selectedStudentIds.length ? ` (${selectedStudentIds.length})` : ''}`}
+                                    {batchBusy ? 'Opening...' : `Open Batch${selectedUserIds.length ? ` (${selectedUserIds.length})` : ''}`}
                                 </Button>
                                 {!votingSchedule.isActive && (
                                     <p className="text-xs text-gray-500">Start voting in the election status panel before opening a batch.</p>

@@ -15,6 +15,7 @@ import AdminResults from './admin/AdminResults';
 import AdminAnnouncements from './admin/AdminAnnouncements';
 import AdminModal from './admin/AdminModal';
 import StudentImportPreviewModal from './admin/StudentImportPreviewModal';
+import { normalizeStudentName } from '../utils/studentName';
 
 const AdminDashboard = () => {
   const { logout } = useAuth();
@@ -50,7 +51,7 @@ const AdminDashboard = () => {
   // Import Preview State
   const [importPreviewOpen, setImportPreviewOpen] = useState(false);
   const [importPreviewStudents, setImportPreviewStudents] = useState([]);
-  const [importPreviewExistingStudentIds, setImportPreviewExistingStudentIds] = useState(new Set());
+  const [importPreviewExistingStudentNames, setImportPreviewExistingStudentNames] = useState(new Set());
 
   // --- Data Loading & Effects ---
 
@@ -111,9 +112,9 @@ const AdminDashboard = () => {
     const batch = response.data;
     setVotingBatch(batch);
     if (batch.roster?.length) {
-      const rosterById = new Map(batch.roster.map(student => [student.studentId, student]));
+      const rosterById = new Map(batch.roster.map(student => [student._id, student]));
       setStudents(current => current.map(student => {
-        const rosterStudent = rosterById.get(student.studentId);
+        const rosterStudent = rosterById.get(student._id);
         return rosterStudent ? { ...student, hasVoted: rosterStudent.hasVoted } : student;
       }));
     }
@@ -253,7 +254,20 @@ const AdminDashboard = () => {
   // --- Handlers: Students ---
   const handleAddStudent = async (formData) => {
     try {
-      await api.post('/users', formData);
+      const password = formData.password || generatePassword();
+      const response = await api.post('/users', { ...formData, password });
+      const credentials = [{
+        studentId: response.data.studentId,
+        voterId: response.data.voterId,
+        name: response.data.name,
+        program: response.data.program,
+        semester: response.data.semester,
+        class: response.data.class,
+        password,
+      }];
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(credentials), 'Credentials');
+      XLSX.writeFile(workbook, 'student_credentials.xlsx');
       setShowModal(false);
       loadData();
     } catch (error) {
@@ -265,7 +279,7 @@ const AdminDashboard = () => {
   const handleEditStudent = async (formData) => {
     if (!editItem) return;
     try {
-      await api.put(`/users/${editItem.studentId}`, formData);
+      await api.put(`/users/${editItem._id}`, formData);
       setShowModal(false);
       loadData();
     } catch (error) {
@@ -274,22 +288,22 @@ const AdminDashboard = () => {
     }
   };
 
-  const handleDeleteStudent = async (studentId) => {
+  const handleDeleteStudent = async (userId) => {
     if (!confirm('Are you sure? This cannot be undone.')) return;
     try {
-      await api.delete(`/users/${studentId}`);
+      await api.delete(`/users/${userId}`);
       loadData();
     } catch (error) {
       console.error("Error deleting student:", error);
     }
   };
 
-  const handleDeleteStudentVotes = async (studentId) => {
+  const handleDeleteStudentVotes = async (userId) => {
     if (!confirm('This will delete all votes by this student. Continue?')) return;
     try {
-      await api.delete(`/users/${studentId}/votes`);
+      await api.delete(`/users/${userId}/votes`);
       loadData();
-      alert(`Votes reset for student ${studentId}`);
+      alert('Votes reset for student');
     } catch (error) {
       console.error("Error resetting votes:", error);
       alert("Error resetting votes");
@@ -375,8 +389,8 @@ const AdminDashboard = () => {
       const registeredUsers = usersResponse.data;
       const registeredStudents = registeredUsers.filter(user => user.role === 'student');
       setStudents(registeredStudents);
-      setImportPreviewExistingStudentIds(
-        new Set(registeredStudents.map(student => String(student.studentId ?? '').trim()).filter(Boolean))
+      setImportPreviewExistingStudentNames(
+        new Set(registeredStudents.map(student => normalizeStudentName(student.name)).filter(Boolean))
       );
 
       const data = await file.arrayBuffer();
@@ -394,7 +408,7 @@ const AdminDashboard = () => {
       };
 
       const parsed = [];
-      const fileIds = new Set();
+      const fileNames = new Set();
       for (let i = 1; i < raw.length; i++) {
         const row = raw[i];
         if (row.every(value => String(value ?? '').trim() === '')) continue;
@@ -410,8 +424,8 @@ const AdminDashboard = () => {
         const issues = [];
 
         if (!studentId) issues.push('Student ID is required.');
-        else if (fileIds.has(studentId)) issues.push('Student ID is duplicated in this file.');
-        if (studentId) fileIds.add(studentId);
+        if (name && fileNames.has(normalizeStudentName(name))) issues.push('Student name and surname are duplicated in this file.');
+        if (name) fileNames.add(normalizeStudentName(name));
         if (!name) issues.push('Name is required.');
         if (program && !['BBA', 'MBA'].includes(program)) issues.push(`Unsupported program "${program}".`);
         if ((program === 'BBA' && !['1', '3', '5'].includes(normalizedSemester)) ||
@@ -454,7 +468,7 @@ const AdminDashboard = () => {
 
     for (const s of selectedRows) {
       try {
-        await api.post('/users', {
+        const response = await api.post('/users', {
           studentId: s.studentId,
           name: s.name,
           class: s.class,
@@ -462,12 +476,20 @@ const AdminDashboard = () => {
           program: s.program,
           password: s.password,
         });
-        importedCredentials.push({ studentId: s.studentId, name: s.name, program: s.program, semester: s.semester, password: s.password });
+        importedCredentials.push({
+          studentId: s.studentId,
+          voterId: response.data.voterId,
+          name: s.name,
+          program: s.program,
+          semester: s.semester,
+          class: s.class,
+          password: s.password,
+        });
         count++;
         importResults.push({ index: s._idx, success: true });
       } catch (err) {
         const msg = err.response?.data?.msg || err.message || 'Unknown error';
-        if (msg.toLowerCase().includes('already exists')) {
+        if (msg.toLowerCase().includes('already exists') || msg.toLowerCase().includes('same name')) {
           skipped++;
           importResults.push({ index: s._idx, success: false, reason: msg });
         } else {
@@ -517,7 +539,7 @@ const AdminDashboard = () => {
 
   const exportCredentials = (selectedStudents = students) => {
     const workbook = XLSX.utils.book_new();
-    const rows = selectedStudents.map(student => ({ studentId: student.studentId, name: student.name,
+    const rows = selectedStudents.map(student => ({ studentId: student.studentId, voterId: student.voterId, name: student.name,
       program: student.program || '', semester: student.semester || '', class: student.class || '',
       hasVoted: student.hasVoted ? 'Yes' : 'No' }));
     XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(rows), 'Students');
@@ -647,7 +669,7 @@ const AdminDashboard = () => {
       <StudentImportPreviewModal
         isOpen={importPreviewOpen}
         students={importPreviewStudents}
-        existingStudentIds={importPreviewExistingStudentIds}
+        existingStudentNames={importPreviewExistingStudentNames}
         onClose={() => setImportPreviewOpen(false)}
         onConfirm={handleConfirmImport}
       />

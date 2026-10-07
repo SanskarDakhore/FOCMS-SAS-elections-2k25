@@ -27,7 +27,7 @@ async function getOrCreateVotingBatch() {
     try {
         return await VotingBatch.findOneAndUpdate(
             { _id: BATCH_ID },
-            { $setOnInsert: { status: 'idle', studentIds: [], activeSubmissions: 0, batchNumber: 0 } },
+            { $setOnInsert: { status: 'idle', userIds: [], activeSubmissions: 0, batchNumber: 0 } },
             { upsert: true, returnDocument: 'after', setDefaultsOnInsert: true }
         );
     } catch (error) {
@@ -53,7 +53,7 @@ async function releaseSubmission(batchNumber) {
 
     const remaining = await User.countDocuments({
         role: 'student',
-        studentId: { $in: batch.studentIds },
+        _id: { $in: batch.userIds },
         hasVoted: { $ne: true }
     });
     if (remaining === 0) await beginCooldown(batchNumber);
@@ -76,7 +76,7 @@ router.get('/batch/status', auth, async (req, res) => {
             className: batch.className,
             cooldownUntil: batch.cooldownUntil,
             allowed: req.user.role === 'student' && batch.status === 'open' &&
-                batch.studentIds.includes(req.user.id) && isVotingActive(schedule?.value)
+                batch.userIds.includes(req.user.id) && isVotingActive(schedule?.value)
         });
     } catch {
         res.status(500).json({ msg: 'Unable to load voting batch status.' });
@@ -87,8 +87,8 @@ router.get('/batch', auth, async (req, res) => {
     if (!isAdmin(req, res)) return;
     try {
         const batch = await getOrCreateVotingBatch();
-        const roster = batch.studentIds.length
-            ? await User.find({ studentId: { $in: batch.studentIds }, role: 'student' })
+        const roster = batch.userIds.length
+            ? await User.find({ _id: { $in: batch.userIds }, role: 'student' })
                 .select('studentId name class hasVoted').lean()
             : [];
         res.json({ ...batch.toObject(), roster,
@@ -100,11 +100,11 @@ router.get('/batch', auth, async (req, res) => {
 
 router.post('/batch', auth, async (req, res) => {
     if (!isAdmin(req, res)) return;
-    const { className, studentIds } = req.body || {};
-    const uniqueStudentIds = Array.isArray(studentIds) ? [...new Set(studentIds)] : [];
-    if (typeof className !== 'string' || !className.trim() || !Array.isArray(studentIds) ||
-        studentIds.length === 0 || uniqueStudentIds.length !== studentIds.length ||
-        studentIds.some(id => typeof id !== 'string' || !id.trim())) {
+    const { className, userIds } = req.body || {};
+    const uniqueUserIds = Array.isArray(userIds) ? [...new Set(userIds)] : [];
+    if (typeof className !== 'string' || !className.trim() || !Array.isArray(userIds) ||
+        userIds.length === 0 || uniqueUserIds.length !== userIds.length ||
+        userIds.some(id => typeof id !== 'string' || !mongoose.isValidObjectId(id))) {
         return res.status(400).json({ msg: 'Choose a class and at least one unique, eligible student.' });
     }
 
@@ -114,9 +114,9 @@ router.post('/batch', auth, async (req, res) => {
             return res.status(409).json({ msg: 'Voting must be active before opening a class batch.' });
         }
 
-        const selectedStudents = await User.find({ studentId: { $in: uniqueStudentIds }, role: 'student' })
+        const selectedStudents = await User.find({ _id: { $in: uniqueUserIds }, role: 'student' })
             .select('studentId class hasVoted').lean();
-        if (selectedStudents.length !== uniqueStudentIds.length || selectedStudents.some(student =>
+        if (selectedStudents.length !== uniqueUserIds.length || selectedStudents.some(student =>
             student.class !== className || student.hasVoted)) {
             return res.status(400).json({ msg: 'A batch can only include unvoted students from the selected class.' });
         }
@@ -137,7 +137,7 @@ router.post('/batch', auth, async (req, res) => {
             activeSubmissions: 0,
             ...(batch.status === 'cooldown' ? { cooldownUntil: { $lte: new Date() } } : {})
         }, {
-            $set: { status: 'open', className: className.trim(), studentIds: uniqueStudentIds,
+            $set: { status: 'open', className: className.trim(), userIds: uniqueUserIds,
                 activeSubmissions: 0, openedAt: new Date(), cooldownUntil: null },
             $inc: { batchNumber: 1 }
         }, { returnDocument: 'after' });
@@ -270,13 +270,13 @@ router.post('/', auth, ballotRateLimit, async (req, res) => {
         reservedBatch = await VotingBatch.findOneAndUpdate({
             _id: BATCH_ID,
             status: 'open',
-            studentIds: req.user.id,
+            userIds: req.user.id,
             activeSubmissions: { $lt: MAX_CONCURRENT_SUBMISSIONS }
         }, { $inc: { activeSubmissions: 1 } }, { returnDocument: 'after' });
 
         if (!reservedBatch) {
             const batch = await getOrCreateVotingBatch();
-            if (batch.status === 'open' && !batch.studentIds.includes(req.user.id)) {
+            if (batch.status === 'open' && !batch.userIds.includes(req.user.id)) {
                 return res.status(403).json({ msg: 'You are not included in the active voting batch.' });
             }
             if (batch.status === 'open' && batch.activeSubmissions >= MAX_CONCURRENT_SUBMISSIONS) {
@@ -294,7 +294,7 @@ router.post('/', auth, ballotRateLimit, async (req, res) => {
         await mongoose.connection.transaction(async session => {
             const setting = await Setting.findOne({ key: 'votingSchedule' }).session(session);
             if (!isVotingActive(setting?.value)) throw new Error('Voting is not currently active.');
-            const user = await User.findOne({ studentId: req.user.id, role: 'student' }).session(session);
+            const user = await User.findOne({ _id: req.user.id, role: 'student' }).session(session);
             if (!user || user.hasVoted) throw new Error('You have already voted or your account is unavailable.');
             if (user.class !== reservedBatch.className) throw new Error('Your class no longer matches this voting batch.');
             const positions = await Position.find().session(session);
@@ -303,7 +303,7 @@ router.post('/', auth, ballotRateLimit, async (req, res) => {
             const claimed = await User.updateOne({ _id: user._id, hasVoted: false },
                 { $set: { hasVoted: true, voteTimestamp: new Date() } }, { session });
             if (claimed.modifiedCount !== 1) throw new Error('You have already voted.');
-            await Vote.insertMany(req.body.map(vote => ({ userId: user.studentId,
+            await Vote.insertMany(req.body.map(vote => ({ userId: String(user._id),
                 positionId: vote.positionId, candidateId: vote.candidateId, studentClass: user.class })), { session });
         });
         res.json({ msg: 'Votes submitted successfully' });
