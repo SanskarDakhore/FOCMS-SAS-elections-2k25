@@ -39,10 +39,10 @@ const AdminSchedule = ({
     const [clockNow, setClockNow] = React.useState(Date.now());
 
     React.useEffect(() => {
-        if (votingBatch?.status !== 'cooldown') return undefined;
+        if (votingBatch?.status !== 'cooldown' && votingBatch?.status !== 'open') return undefined;
         const intervalId = setInterval(() => setClockNow(Date.now()), 1000);
         return () => clearInterval(intervalId);
-    }, [votingBatch?.status, votingBatch?.cooldownUntil]);
+    }, [votingBatch?.status, votingBatch?.cooldownUntil, votingBatch?.openedAt]);
 
     const start = votingSchedule.votingStart ? new Date(votingSchedule.votingStart) : null;
     const end = votingSchedule.votingEnd ? new Date(votingSchedule.votingEnd) : null;
@@ -70,6 +70,9 @@ const AdminSchedule = ({
     const classStudents = pendingStudents.filter(student => student.class === selectedClass);
     const cooldownSeconds = votingBatch?.cooldownUntil
         ? Math.max(0, Math.ceil((new Date(votingBatch.cooldownUntil).getTime() - clockNow) / 1000))
+        : 0;
+    const batchRemainingSeconds = (votingBatch?.status === 'open' && votingBatch?.openedAt)
+        ? Math.max(0, Math.ceil((new Date(votingBatch.openedAt).getTime() + 5 * 60 * 1000 - clockNow) / 1000))
         : 0;
 
     const handleOpenBatch = async () => {
@@ -323,7 +326,14 @@ const AdminSchedule = ({
                         {votingBatch?.status === 'open' ? (
                             <div className="space-y-4">
                                 <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/10 p-4">
-                                    <p className="font-semibold text-emerald-300">{votingBatch.className} is voting</p>
+                                    <div className="flex justify-between items-start">
+                                        <p className="font-semibold text-emerald-300">{votingBatch.className} is voting</p>
+                                        <p className="font-mono text-emerald-300 text-sm font-bold bg-emerald-500/20 px-2 py-1 rounded">
+                                            {batchRemainingSeconds > 0 
+                                                ? `${Math.floor(batchRemainingSeconds / 60)}:${String(batchRemainingSeconds % 60).padStart(2, '0')}` 
+                                                : '0:00 (Closing...)'}
+                                        </p>
+                                    </div>
                                     <p className="mt-1 text-sm text-gray-300">
                                         {votingBatch.roster?.filter(student => student.hasVoted).length || 0} of {votingBatch.roster?.length || 0} voters completed
                                     </p>

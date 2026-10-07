@@ -3,7 +3,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import api from '../utils/api';
 import { getVotingStatus as getScheduleStatus } from '../utils/votingSchedule';
-import { Vote, CheckCircle, ArrowLeft, AlertTriangle, Users } from 'lucide-react';
+import { Vote, CheckCircle, ArrowLeft, AlertTriangle, Users, Clock } from 'lucide-react';
 import LoadingSpinner from './LoadingSpinner';
 import Card from './ui/Card';
 import Button from './ui/Button';
@@ -23,6 +23,7 @@ function VotingPage() {
   const [departmentInfo, setDepartmentInfo] = useState(null);
   const [voteSubmitted, setVoteSubmitted] = useState(false);
   const [redirectCountdown, setRedirectCountdown] = useState(8);
+  const [clockNow, setClockNow] = useState(Date.now());
 
   // Guard: if the user has already voted, log them out immediately.
   useEffect(() => {
@@ -61,6 +62,16 @@ function VotingPage() {
     }, 5000);
     return () => clearInterval(intervalId);
   }, [batchStatus, voteSubmitted]);
+
+  useEffect(() => {
+    if (!batchStatus || batchStatus.status !== 'open') return undefined;
+    const intervalId = setInterval(() => setClockNow(Date.now()), 1000);
+    return () => clearInterval(intervalId);
+  }, [batchStatus]);
+
+  const batchRemainingSeconds = (batchStatus?.status === 'open' && batchStatus?.openedAt)
+      ? Math.max(0, Math.ceil((new Date(batchStatus.openedAt).getTime() + 5 * 60 * 1000 - clockNow) / 1000))
+      : 0;
 
   const loadElectionData = async () => {
     try {
@@ -253,16 +264,26 @@ function VotingPage() {
               <p className="text-gray-400">Select one candidate for each position below</p>
             </div>
           </div>
-          {/* Progress Bar */}
-          <div className="glass-panel px-4 py-2 rounded-xl flex items-center gap-4">
-            <span className="text-sm text-gray-300 whitespace-nowrap">Progress</span>
-            <div className="w-32 h-2 bg-gray-700 rounded-full overflow-hidden">
-              <div
-                className="h-full bg-indigo-500 transition-all duration-500"
-                style={{ width: `${(Object.keys(votes).length / totalPositions) * 100}%` }}
-              />
+          {/* Progress Bar & Timer */}
+          <div className="flex flex-col sm:flex-row items-center gap-4">
+            {batchRemainingSeconds > 0 && (
+              <div className="glass-panel px-4 py-2 rounded-xl flex items-center gap-2 border border-emerald-500/20 bg-emerald-500/10">
+                <Clock className="w-4 h-4 text-emerald-400" />
+                <span className="text-sm font-mono font-bold text-emerald-300">
+                  {Math.floor(batchRemainingSeconds / 60)}:{String(batchRemainingSeconds % 60).padStart(2, '0')}
+                </span>
+              </div>
+            )}
+            <div className="glass-panel px-4 py-2 rounded-xl flex items-center gap-4">
+              <span className="text-sm text-gray-300 whitespace-nowrap">Progress</span>
+              <div className="w-32 h-2 bg-gray-700 rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-indigo-500 transition-all duration-500"
+                  style={{ width: `${(Object.keys(votes).length / totalPositions) * 100}%` }}
+                />
+              </div>
+              <span className="text-sm font-bold text-white">{Object.keys(votes).length}/{positions.length}</span>
             </div>
-            <span className="text-sm font-bold text-white">{Object.keys(votes).length}/{positions.length}</span>
           </div>
         </div>
 

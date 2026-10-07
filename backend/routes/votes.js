@@ -13,7 +13,8 @@ import rateLimit from 'express-rate-limit';
 const router = express.Router();
 const BATCH_ID = 'current';
 const MAX_CONCURRENT_SUBMISSIONS = 100;
-const BATCH_COOLDOWN_MS = 2 * 60 * 1000;
+const BATCH_DURATION_MS = 5 * 60 * 1000; // 5 minutes open
+const BATCH_COOLDOWN_MS = 2 * 60 * 1000; // 2 minutes cooldown
 const ballotRateLimit = rateLimit({
     windowMs: 60 * 1000,
     limit: 20,
@@ -25,14 +26,22 @@ const ballotRateLimit = rateLimit({
 
 async function getOrCreateVotingBatch() {
     try {
-        return await VotingBatch.findOneAndUpdate(
+        let batch = await VotingBatch.findOneAndUpdate(
             { _id: BATCH_ID },
             { $setOnInsert: { status: 'idle', userIds: [], activeSubmissions: 0, batchNumber: 0 } },
             { upsert: true, returnDocument: 'after', setDefaultsOnInsert: true }
         );
+        if (batch.status === 'open' && batch.openedAt && (Date.now() - batch.openedAt.getTime()) >= BATCH_DURATION_MS && batch.activeSubmissions === 0) {
+            batch = await beginCooldown(batch.batchNumber) || batch;
+        }
+        return batch;
     } catch (error) {
         if (error.code !== 11000) throw error;
-        return VotingBatch.findById(BATCH_ID);
+        let batch = await VotingBatch.findById(BATCH_ID);
+        if (batch && batch.status === 'open' && batch.openedAt && (Date.now() - batch.openedAt.getTime()) >= BATCH_DURATION_MS && batch.activeSubmissions === 0) {
+            batch = await beginCooldown(batch.batchNumber) || batch;
+        }
+        return batch;
     }
 }
 
@@ -56,7 +65,8 @@ async function releaseSubmission(batchNumber) {
         _id: { $in: batch.userIds },
         hasVoted: { $ne: true }
     });
-    if (remaining === 0) await beginCooldown(batchNumber);
+    const expired = batch.openedAt && (Date.now() - batch.openedAt.getTime()) >= BATCH_DURATION_MS;
+    if (remaining === 0 || expired) await beginCooldown(batchNumber);
 }
 
 function isAdmin(req, res) {
@@ -74,6 +84,7 @@ router.get('/batch/status', auth, async (req, res) => {
         res.json({
             status: batch.status,
             className: batch.className,
+            openedAt: batch.openedAt,
             cooldownUntil: batch.cooldownUntil,
             allowed: req.user.role === 'student' && batch.status === 'open' &&
                 batch.userIds.includes(req.user.id) && isVotingActive(schedule?.value)
