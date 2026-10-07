@@ -408,58 +408,72 @@ const AdminDashboard = () => {
 
       const data = await file.arrayBuffer();
       const workbook = XLSX.read(data);
-      const sheet = workbook.Sheets[workbook.SheetNames[0]];
-      if (!sheet) throw new Error('The workbook does not contain a worksheet.');
+      if (!workbook.SheetNames.length) throw new Error('The workbook does not contain any worksheets.');
 
-      const raw = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
-      if (raw.length < 2) throw new Error('The sheet appears to be empty.');
-
-      const headers = raw[0].map(h => String(h).toLowerCase().trim());
-      const col = (row, names) => {
-        const idx = names.map(name => headers.indexOf(name)).find(index => index >= 0);
-        return idx === undefined ? '' : String(row[idx] ?? '').trim();
-      };
-
+      // ── Read ALL sheets so a multi-sheet file (Sem1 + Sem2 on
+      //    separate tabs) is fully imported in one go without data loss ──
       const parsed = [];
       const fileNames = new Set();
-      for (let i = 1; i < raw.length; i++) {
-        const row = raw[i];
-        if (row.every(value => String(value ?? '').trim() === '')) continue;
+      const fileStudentIds = new Set(); // prevents duplicates across sheets
 
-        const studentId = col(row, ['studentid', 'student_id', 'id']);
-        const name = col(row, ['name']);
-        const classVal = col(row, ['class']);
-        const program = (col(row, ['program']) || (/^(BBA|MBA)/i.exec(classVal)?.[1] ?? '')).toUpperCase();
-        const semester = col(row, ['semester']) || '1';
-        const normalizedSemester = semester.replace(/^Semester\s+/i, '');
-        const rawPassword = col(row, ['password']);
-        const password = rawPassword || generatePassword();
-        const issues = [];
+      for (const sheetName of workbook.SheetNames) {
+        const sheet = workbook.Sheets[sheetName];
+        if (!sheet) continue;
 
-        if (!studentId) issues.push('Student ID is required.');
-        if (name && fileNames.has(normalizeStudentName(name))) issues.push('Student name and surname are duplicated in this file.');
-        if (name) fileNames.add(normalizeStudentName(name));
-        if (!name) issues.push('Name is required.');
-        if (program && !['BBA', 'MBA'].includes(program)) issues.push(`Unsupported program "${program}".`);
-        if ((program === 'BBA' && !['1', '3', '5'].includes(normalizedSemester)) ||
-            (program === 'MBA' && !['1', '3'].includes(normalizedSemester))) {
-          issues.push(`${program} does not support semester ${normalizedSemester}.`);
+        const raw = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
+        if (raw.length < 2) continue; // skip empty / header-only sheets
+
+        const headers = raw[0].map(h => String(h).toLowerCase().trim());
+        const col = (row, names) => {
+          const idx = names.map(name => headers.indexOf(name)).find(index => index >= 0);
+          return idx === undefined ? '' : String(row[idx] ?? '').trim();
+        };
+
+        for (let i = 1; i < raw.length; i++) {
+          const row = raw[i];
+          if (row.every(value => String(value ?? '').trim() === '')) continue;
+
+          const studentId = col(row, ['studentid', 'student_id', 'id']);
+          const name = col(row, ['name']);
+
+          // Skip IDs already seen on a previous sheet (cross-sheet dedup)
+          if (studentId && fileStudentIds.has(String(studentId))) continue;
+          if (studentId) fileStudentIds.add(String(studentId));
+
+          const classVal = col(row, ['class']);
+          const program = (col(row, ['program']) || (/^(BBA|MBA)/i.exec(classVal)?.[1] ?? '')).toUpperCase();
+          const semester = col(row, ['semester']) || '1';
+          const normalizedSemester = semester.replace(/^Semester\s+/i, '');
+          const rawPassword = col(row, ['password']);
+          const password = rawPassword || generatePassword();
+          const issues = [];
+
+          if (!studentId) issues.push('Student ID is required.');
+          if (name && fileNames.has(normalizeStudentName(name))) issues.push('Student name and surname are duplicated in this file.');
+          if (name) fileNames.add(normalizeStudentName(name));
+          if (!name) issues.push('Name is required.');
+          if (program && !['BBA', 'MBA'].includes(program)) issues.push(`Unsupported program "${program}".`);
+          if ((program === 'BBA' && !['1', '3', '5'].includes(normalizedSemester)) ||
+              (program === 'MBA' && !['1', '3'].includes(normalizedSemester))) {
+            issues.push(`${program} does not support semester ${normalizedSemester}.`);
+          }
+          parsed.push({
+            _rowNumber: i + 1,
+            _sheet: sheetName,
+            studentId,
+            voterId: generateVoterId(voterIds),
+            name,
+            class: classVal || (program ? `${program}-Sem${semester}` : ''),
+            program,
+            semester,
+            password,
+            _autoPassword: !rawPassword,
+            _issues: issues,
+          });
         }
-        parsed.push({
-          _rowNumber: i + 1,
-          studentId,
-          voterId: generateVoterId(voterIds),
-          name,
-          class: classVal || (program ? `${program}-Sem${semester}` : ''),
-          program,
-          semester,
-          password,
-          _autoPassword: !rawPassword,
-          _issues: issues,
-        });
       }
 
-      if (parsed.length === 0) throw new Error('No student rows found in the sheet.');
+      if (parsed.length === 0) throw new Error('No student rows found in the file.');
 
       setImportPreviewStudents(parsed);
       setImportPreviewOpen(true);
