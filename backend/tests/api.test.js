@@ -256,6 +256,33 @@ test('student accounts with repeated IDs remain distinct and duplicate normalize
     assert.equal(invalidVoterId.status, 400);
 });
 
+test('importing another program appends students without removing previously imported students', async () => {
+    const bba = await request('POST', '/users', {
+        studentId: 'BBA-APPEND-TEST',
+        name: 'Append Test BBA Student',
+        program: 'BBA',
+        semester: '1',
+        class: 'BBA-Sem1',
+        password: 'integration-password'
+    }, adminToken);
+    assert.equal(bba.status, 200);
+
+    const mba = await request('POST', '/users', {
+        studentId: 'MBA-APPEND-TEST',
+        name: 'Append Test MBA Student',
+        program: 'MBA',
+        semester: '1',
+        class: 'MBA-Sem1',
+        password: 'integration-password'
+    }, adminToken);
+    assert.equal(mba.status, 200);
+
+    const registry = await request('GET', '/users', undefined, adminToken);
+    assert.equal(registry.status, 200);
+    assert.ok(registry.body.some(student => student._id === bba.body._id));
+    assert.ok(registry.body.some(student => student._id === mba.body._id));
+});
+
 test('FOCMS BBA/MBA fields survive student create and edit; hashes are never returned', async () => {
     const created = await request('POST', '/users', { studentId: 'MBA301', name: 'MBA Student',
         program: 'MBA', semester: '3', class: 'MBA-Sem3', password: 'student-password' }, adminToken);
@@ -348,6 +375,25 @@ test('class batches enforce capacity and cooldown, then admit missed unvoted stu
     }
     assert.equal(batch.body.status, 'cooldown', JSON.stringify(batch.body));
     assert.equal(batch.body.remainingCount, 0);
+});
+
+test('deleting a voted student removes their votes and recalculates election results', async () => {
+    const resultsBefore = await request('GET', '/votes/results', undefined, adminToken);
+    assert.equal(resultsBefore.status, 200);
+    assert.ok(resultsBefore.body.every(result => result.totalVotes === 3));
+
+    const deleteRes = await request('DELETE', `/users/${studentAccountIds.BBA102}`, undefined, adminToken);
+    assert.equal(deleteRes.status, 200);
+    assert.equal(await User.countDocuments({ _id: studentAccountIds.BBA102 }), 0);
+    assert.equal(await Vote.countDocuments({ userId: studentAccountIds.BBA102 }), 0);
+
+    const resultsAfter = await request('GET', '/votes/results', undefined, adminToken);
+    assert.equal(resultsAfter.status, 200);
+    assert.ok(resultsAfter.body.every(result => result.totalVotes === 2));
+
+    const stats = await request('GET', '/votes/stats');
+    assert.equal(stats.body.totalVotes, 4);
+    assert.equal(stats.body.totalVoted, 2);
 });
 
 test('bulk reset issues usable new credentials; bulk delete preserves admin accounts', async () => {

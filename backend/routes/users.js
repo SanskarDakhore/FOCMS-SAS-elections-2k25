@@ -2,6 +2,7 @@ import express from 'express';
 import bcrypt from 'bcrypt';
 import User from '../models/User.js';
 import Vote from '../models/Vote.js';
+import VotingBatch from '../models/VotingBatch.js';
 import auth from '../middleware/auth.js';
 import mongoose from 'mongoose';
 import { randomBytes } from 'node:crypto';
@@ -46,8 +47,10 @@ router.delete('/bulk/all', auth, async (req, res) => {
     if (req.user.role !== 'admin') return res.status(403).json({ msg: 'Access denied' });
     await mongoose.connection.transaction(async session => {
         const students = await User.find({ role: 'student' }).session(session);
-        await Vote.deleteMany({ userId: { $in: students.map(student => String(student._id)) } }, { session });
+        const studentIds = students.flatMap(s => [String(s._id), s.studentId, s.voterId].filter(Boolean));
+        await Vote.deleteMany({ userId: { $in: studentIds } }, { session });
         await User.deleteMany({ role: 'student' }, { session });
+        await VotingBatch.updateOne({ _id: 'current' }, { $set: { userIds: [], status: 'idle', activeSubmissions: 0 } }, { session });
     });
     res.json({ msg: 'Students and their votes deleted; administrator accounts retained.' });
 });
@@ -193,7 +196,15 @@ router.delete('/:id', auth, async (req, res) => {
         await mongoose.connection.transaction(async session => {
             const account = await resolveStudentAccount(req.params.id, session);
             if (account) user = await User.findOneAndDelete({ _id: account._id, role: 'student' }, { session });
-            if (user) await Vote.deleteMany({ userId: String(user._id) }, { session });
+            if (user) {
+                const userIdentifiers = [String(user._id), user.studentId, user.voterId].filter(Boolean);
+                await Vote.deleteMany({ userId: { $in: userIdentifiers } }, { session });
+                await VotingBatch.updateOne(
+                    { _id: 'current' },
+                    { $pull: { userIds: String(user._id) } },
+                    { session }
+                );
+            }
         });
         if (!user) return res.status(404).json({ msg: 'User not found' });
         res.json({ msg: 'User and associated votes removed' });
@@ -213,7 +224,10 @@ router.delete('/:id/votes', auth, async (req, res) => {
             const account = await resolveStudentAccount(req.params.id, session);
             if (account) user = await User.findOneAndUpdate({ _id: account._id, role: 'student' },
                 { hasVoted: false, voteTimestamp: null }, { returnDocument: 'after', session });
-            if (user) await Vote.deleteMany({ userId: String(user._id) }, { session });
+            if (user) {
+                const userIdentifiers = [String(user._id), user.studentId, user.voterId].filter(Boolean);
+                await Vote.deleteMany({ userId: { $in: userIdentifiers } }, { session });
+            }
         });
         if (!user) return res.status(404).json({ msg: 'User not found' });
 

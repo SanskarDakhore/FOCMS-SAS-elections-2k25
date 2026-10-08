@@ -271,6 +271,7 @@ const AdminManage = ({
                                             <button
                                                 onClick={() => { setModalType('student'); setEditItem(student); setShowModal(true); }}
                                                 className="p-1.5 rounded hover:bg-white/10 text-blue-400 transition-colors"
+                                                title="Edit Student"
                                             >
                                                 <Edit size={16} />
                                             </button>
@@ -286,7 +287,7 @@ const AdminManage = ({
                                             <button
                                                 onClick={() => handleDeleteStudent(student._id)}
                                                 className="p-1.5 rounded hover:bg-white/10 text-red-400 transition-colors"
-                                                disabled={student.hasVoted}
+                                                title="Delete Student"
                                             >
                                                 <Trash2 size={16} />
                                             </button>

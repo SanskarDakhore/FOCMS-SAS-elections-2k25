@@ -293,7 +293,7 @@ const AdminDashboard = () => {
   };
 
   const handleDeleteStudent = async (userId) => {
-    if (!confirm('Are you sure? This cannot be undone.')) return;
+    if (!confirm('Are you sure? If this student has voted, their votes will also be removed from the election results.')) return;
     try {
       await api.delete(`/users/${userId}`);
       const deletedStudent = students.find(student => student._id === userId);
@@ -302,9 +302,10 @@ const AdminDashboard = () => {
           credential => credential.voterId !== deletedStudent.voterId
         ));
       }
-      loadData();
+      await loadData();
     } catch (error) {
       console.error("Error deleting student:", error);
+      alert(error.response?.data?.msg || "Error deleting student");
     }
   };
 
@@ -312,11 +313,11 @@ const AdminDashboard = () => {
     if (!confirm('This will delete all votes by this student. Continue?')) return;
     try {
       await api.delete(`/users/${userId}/votes`);
-      loadData();
+      await loadData();
       alert('Votes reset for student');
     } catch (error) {
       console.error("Error resetting votes:", error);
-      alert("Error resetting votes");
+      alert(error.response?.data?.msg || "Error resetting votes");
     }
   };
 
